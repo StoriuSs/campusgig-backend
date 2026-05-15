@@ -1,0 +1,195 @@
+services:
+  # ── NestJS Application (Development) ──
+  app:
+    container_name: campusgig-app-dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    env_file:
+      - .env.development  # complete dev config — copy from .env.example to create
+    environment:
+      # Override hosts/ports to use Docker-internal values
+      # (same pattern as DB_PORT, REDIS_PORT — the host-mapped port in .env.development
+      # differs from the container-internal port)
+
+      # We let NestJS use the exact PORT from .env.development (e.g. 8888) 
+      # so that the terminal logs print clickable links that actually work on the host.
+      # Note: The only minor downside is that the EXPOSE 3000 line in your Dockerfile 
+      # becomes slightly inaccurate (since you're now using 8888), but Docker doesn't 
+      # actually enforce EXPOSE anyway, so it won't break anything.
+      
+      # PORT: 3000
+      DATABASE_URL: postgresql://${DB_USERNAME:-storius}:${DB_PASSWORD:-storius_password}@db:5432/${DB_NAME:-hexagonal}?schema=public
+      DB_HOST: db
+      REDIS_HOST: redis
+      KEYCLOAK_HOST: keycloak
+      KEYCLOAK_PORT: 8080
+      KEYCLOAK_PUBLIC_URL: http://localhost:${KEYCLOAK_PORT:-8085}
+      LOKI_HOST: http://loki:3100
+      LOKI_PORT: 3100
+      DB_PORT: 5432
+      REDIS_PORT: 6379
+      CI: "true"
+    ports:
+      # Maps the host port to the identical container port (e.g., 8888:8888)
+      - "${PORT:-3000}:${PORT:-3000}"
+      - "9229:9229" # Node.js debug port
+    volumes:
+      - .:/app # Source code bind-mount for hot-reload
+      - /app/node_modules  # Prevent host node_modules from overriding container's
+      - /app/generated     # Preserve generated Prisma client
+    depends_on:
+      - db
+      - redis
+      - keycloak
+    command: sh -c "pnpm approve-builds --all && pnpm exec prisma generate && pnpm run dev"
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  db:
+    container_name: campusgig-db-dev
+    image: postgres:16.2-alpine
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+      PGDATA: /data/postgres
+    volumes:
+      - db:/data/postgres
+      - ./initdb:/docker-entrypoint-initdb.d # Initialize Keycloak DB
+    ports:
+      - "${DB_PORT}:5432"
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    container_name: campusgig-redis-dev
+    image: redis:7.2.4-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    ports:
+      - "${REDIS_PORT}:6379"
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # Keycloak
+  keycloak:
+    container_name: campusgig-keycloak-dev
+    image: quay.io/keycloak/keycloak:26.5
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/${KEYCLOAK_DB_NAME}
+      KC_DB_USERNAME: ${DB_USERNAME}
+      KC_DB_PASSWORD: ${DB_PASSWORD}
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME}
+      KC_HTTP_PORT: 8080
+      KC_HTTPS_PORT: 8443
+    command: start-dev
+    volumes:
+      - ./keycloak-plugins:/opt/keycloak/providers
+    ports:
+      - "${KEYCLOAK_PORT}:8080"
+    depends_on:
+      - db
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # Prometheus - Metrics collection
+  prometheus:
+    container_name: campusgig-prometheus-dev
+    image: prom/prometheus:v2.50.1
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # Grafana - Metrics visualization
+  grafana:
+    container_name: campusgig-grafana-dev
+    image: grafana/grafana:11.0.0
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # Loki - Log aggregation
+  loki:
+    container_name: campusgig-loki-dev
+    image: grafana/loki:2.9.0
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # Promtail - Log shipping to Loki
+  promtail:
+    container_name: campusgig-promtail-dev
+    image: grafana/promtail:2.9.0
+    volumes:
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Read Docker container logs
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # Node Exporter - Hardware and OS metrics
+  node-exporter:
+    container_name: campusgig-node-exporter-dev
+    image: prom/node-exporter:latest
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - backend
+    restart: unless-stopped
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  db:
+  prometheus-data:
+  grafana-data:
+  loki-data:

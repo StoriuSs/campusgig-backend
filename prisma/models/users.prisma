@@ -1,0 +1,26 @@
+model User {
+  id         String   @id @default(uuid())
+  keycloakId String   @unique // Links to Keycloak user (token.sub)
+  
+  // Profile / searchable fields (store when app needs search/profile views)
+  username     String?  @unique
+  email         String? // This is set as not unique on purpose for the soft-delete flow since Keycloak would make sure there is no duplicate active emails anyway
+  displayName  String?
+  avatarUrl    String?
+  bio          String?
+  hasSetUsername Boolean @default(false)
+  // emailVerified Boolean  @default(false)
+  // lastSyncedAt  DateTime? @db.Timestamptz(6)
+  
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+  deletedBy String?
+
+  @@index([keycloakId])
+  @@index([username])
+  // @@index([email])
+  @@index([keycloakId, deletedAt])
+  @@index([deletedAt])
+}
+

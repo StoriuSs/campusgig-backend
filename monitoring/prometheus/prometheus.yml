@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'nestjs-app'
+    scrape_interval: 5s
+    static_configs:
+      # Use internal Docker network name ('app') instead of host.docker.internal
+      - targets: ['app:3000']
+    metrics_path: '/api/v1/metrics'
+
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']

@@ -1,0 +1,2342 @@
+openapi: 3.0.3
+info:
+  title: Moneymaze API
+  version: '1.0.0'
+  description: |
+    ## Overview
+    RESTful API for personal expense tracking and budget management. Built with NestJS, Prisma, and PostgreSQL.
+
+    ## Features
+    - **Authentication**: JWT-based auth with HTTP-only cookies for refresh tokens
+    - **User Management**: Profile management with avatar uploads
+    - **Categories**: Custom expense categories with icons and colors
+    - **Budget Management**: Template-based budgets with automatic period generation
+    - **Expense Tracking**: Detailed expense records with category support
+    - **Subscriptions**: Recurring subscription management
+    - **Analytics**: Expense summaries and spending insights
+    - **Health Monitoring**: Comprehensive health checks for production readiness
+
+    ## Response Format
+    All API responses follow a standardized format:
+    ```json
+    {
+      "meta": {
+        "code": "200000",
+        "type": "SUCCESS",
+        "message": "Operation completed successfully",
+        "timestamp": "2025-11-15T10:30:00.000Z",
+        "request_id": "uuid",
+        "request_duration": 123
+      },
+      "data": { /* response payload */ }
+    }
+    ```
+
+    ## Authentication
+    - Access tokens: Sent in `Authorization: Bearer <token>` header
+    - Refresh tokens: Stored in HTTP-only cookies (automatic handling by browser)
+    - Token refresh: Use `/auth/refresh` endpoint (no body needed)
+
+servers:
+- url: https://api.example.com/api/v1
+  description: Production server
+- url: http://localhost:9000/api/v1
+  description: Local server
+
+paths:
+  # -------------------------
+  # AUTH & VERIFICATION
+  # -------------------------
+  /auth/register:
+    post:
+      summary: Register new user (send verification code)
+      tags:
+      - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRegisterRequest'
+            examples:
+              sample:
+                value:
+                  full_name: 'Storius'
+                  email: 'storius.test@gmail.com'
+                  password: 'Testpassword123!'
+      responses:
+        '200':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseRegisterSuccess'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: '200101'
+                      type: 'AUTH_REGISTER_SUCCESS'
+                      message: 'Registration successful'
+                      timestamp: '2025-10-19T10:30:00.000Z'
+                      request_id: '11111111-1111-4111-8111-111111111111'
+                      request_duration: 123
+                    data:
+                      email: "storius.test@gmail.com"
+                      type: "register"
+                      expires_in: 300
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                email_exists:
+                  value:
+                    meta:
+                      code: '409001'
+                      type: 'AUTH_EMAIL_EXISTS'
+                      message: 'Email already exists'
+                      timestamp: '2025-10-19T10:30:00.000Z'
+                      request_id: '22222222-2222-4222-8222-222222222222'
+                      request_duration: 45
+                    data:
+                      details: 'Email already exists'
+                      path: '/api/v1/auth/register'
+                      method: 'POST'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                invalid_email:
+                  value:
+                    meta:
+                      code: '400001'
+                      type: 'VALIDATION_ERROR'
+                      message: 'Invalid email format'
+                      timestamp: '2025-10-19T10:31:00.000Z'
+                      request_id: '33333333-3333-4333-8333-333333333333'
+                      request_duration: 12
+                    data:
+                      details: 'Email must be a valid email address'
+                      path: '/api/v1/auth/register'
+                      method: 'POST'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                server_error:
+                  value:
+                    meta:
+                      code: '500000'
+                      type: 'GENERIC_ERROR'
+                      message: 'Internal server error'
+                      timestamp: '2025-10-19T10:32:00.000Z'
+                      request_id: '44444444-4444-4444-8444-444444444444'
+                      request_duration: 3012
+                    data:
+                      details: 'Unexpected database error'
+                      path: '/api/v1/auth/register'
+                      method: 'POST'
+
+  /auth/verify:
+    post:
+      summary: Verify registration or password reset code
+      description: |
+        Verify the verification code for registration or password reset.
+        For 'register' type: Returns access token and sets refresh token as HTTP-only cookie.
+        For 'forgot_password' type: Returns verification status only (no tokens).
+      tags:
+      - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthVerifyRequest'
+            examples:
+              sample:
+                value:
+                  email: 'storius.test@gmail.com'
+                  code: '123456'
+                  type: 'register'
+      responses:
+        '200':
+          description: Verification successful and account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseRegisterSuccess'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: '200101'
+                      type: 'AUTH_REGISTER_SUCCESS'
+                      message: 'Registration successful'
+                      timestamp: '2025-10-19T10:40:00.000Z'
+                      request_id: '55555555-5555-4555-8555-555555555555'
+                      request_duration: 87
+                    data:
+                      accessToken: 'eyJhbGciOiJIUzI1...'
+                      email: 'storius.test@gmail.com'
+                      fullName: 'Storius'
+        '400':
+          description: Invalid or expired code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                invalid_code:
+                  value:
+                    meta:
+                      code: '400001'
+                      type: 'VALIDATION_ERROR'
+                      message: 'Invalid verification code'
+                      timestamp: '2025-10-19T10:41:00.000Z'
+                      request_id: '66666666-6666-4666-8666-666666666666'
+                      request_duration: 10
+                    data:
+                      details: 'Code expired or does not match'
+                      path: '/api/v1/auth/verify'
+                      method: 'POST'
+
+  /auth/login:
+    post:
+      summary: Login with email & password
+      description: |
+        Login with email and password.
+        Returns an access token in the response body and sets a refresh token as an HTTP-only cookie.
+      tags:
+      - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthLoginRequest'
+            examples:
+              sample:
+                value:
+                  email: 'storius.test@gmail.com'
+                  password: 'Testpassword123!'
+      responses:
+        '200':
+          description: Login success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseLoginSuccess'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: '200100'
+                      type: 'AUTH_LOGIN_SUCCESS'
+                      message: 'Login successful'
+                      timestamp: '2025-10-19T11:00:00.000Z'
+                      request_id: '77777777-7777-4777-8777-777777777777'
+                      request_duration: 98
+                    data:
+                      accessToken: 'eyJhbGciOiJIUzI1...'
+                      user:
+                        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+                        email: 'storius.test@gmail.com'
+                        fullName: 'Storius'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                invalid_creds:
+                  value:
+                    meta:
+                      code: '401001'
+                      type: 'AUTH_INVALID_CREDENTIALS'
+                      message: 'Invalid email or password'
+                      timestamp: '2025-10-19T11:01:00.000Z'
+                      request_id: '88888888-8888-4888-8888-888888888888'
+                      request_duration: 15
+                    data:
+                      details: 'Invalid email or password'
+                      path: '/api/v1/auth/login'
+                      method: 'POST'
+
+  /auth/refresh:
+    post:
+      summary: Refresh access token using refresh token (cookie)
+      tags:
+      - Auth
+      description: |
+        Refresh access token using refresh token stored in HTTP-only cookie.
+        The refresh token is automatically sent by the browser and does not need to be in the request body.
+        Returns a new access token and sets a new refresh token in the HTTP-only cookie.
+        On success, server will revoke old refresh token and create a new refresh token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRefreshRequest'
+      responses:
+        '200':
+          description: Refresh success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseRefreshSuccess'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: '200102'
+                      type: 'AUTH_REFRESH_SUCCESS'
+                      message: 'Token refreshed successfully'
+                      timestamp: '2025-10-19T11:05:00.000Z'
+                      request_id: '99999999-9999-4999-8999-999999999999'
+                      request_duration: 65
+                    data:
+                      accessToken: 'new-access-token'
+        '401':
+          description: Refresh token invalid or revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                revoked:
+                  value:
+                    meta:
+                      code: '401002'
+                      type: 'AUTH_UNAUTHORIZED'
+                      message: 'Unauthorized access'
+                      timestamp: '2025-10-19T11:06:00.000Z'
+                      request_id: 'aaaaaaaa-bbbb-4ccc-8ddd-aaaaaaaaaaaa'
+                      request_duration: 23
+                    data:
+                      details: 'Refresh token revoked or expired'
+                      path: '/api/v1/auth/refresh'
+                      method: 'POST'
+
+  /auth/logout:
+    post:
+      summary: Logout current session (revoke refresh token)
+      tags:
+      - Auth
+      description: |
+        Logout user and revoke tokens.
+        Refresh token is automatically read from HTTP-only cookie.
+        Access token is extracted from Authorization header (Bearer token).
+        The refresh token cookie will be cleared.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthLogoutRequest'
+      responses:
+        '200':
+          description: Logout success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseGenericSuccess'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: '200000'
+                      type: 'SUCCESS'
+                      message: 'Logout successful'
+                      timestamp: '2025-10-19T11:10:00.000Z'
+                      request_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+                      request_duration: 20
+                    data:
+                      details: 'Refresh token revoked'
+        '401':
+          description: Unauthorized (no valid refresh token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                not_auth:
+                  value:
+                    meta:
+                      code: '401002'
+                      type: 'AUTH_UNAUTHORIZED'
+                      message: 'Unauthorized access'
+                      timestamp: '2025-10-19T11:11:00.000Z'
+                      request_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+                      request_duration: 5
+                    data:
+                      details: 'No refresh token present'
+                      path: '/api/v1/auth/logout'
+                      method: 'POST'
+
+  /auth/forgot-password:
+    post:
+      summary: Request password reset code (send to email)
+      tags:
+      - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthForgotPasswordRequest'
+            examples:
+              sample:
+                value:
+                  email: 'storius.test@gmail.com'
+      responses:
+        '200':
+          description: Forgot password email sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseGenericSuccess'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: '200400'
+                      type: 'EMAIL_SEND_SUCCESS'
+                      message: 'Email sent successfully'
+                      timestamp: '2025-10-19T11:20:00.000Z'
+                      request_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+                      request_duration: 150
+                    data:
+                      details: 'Password reset code sent to email'
+        '404':
+          description: Email not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                not_found:
+                  value:
+                    meta:
+                      code: '404001'
+                      type: 'USER_NOT_FOUND'
+                      message: 'User not found'
+                      timestamp: '2025-10-19T11:21:00.000Z'
+                      request_id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+                      request_duration: 7
+                    data:
+                      details: 'User with provided email does not exist'
+                      path: '/api/v1/auth/forgot-password'
+                      method: 'POST'
+
+  /auth/reset-password:
+    post:
+      summary: Reset password using verification code
+      tags:
+      - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthResetPasswordRequest'
+            examples:
+              sample:
+                value:
+                  code: '654321'
+                  new_password: 'NewPassw0rd!'
+      responses:
+        '200':
+          description: Password reset success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseGenericSuccess'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: '200000'
+                      type: 'SUCCESS'
+                      message: 'Operation completed successfully'
+                      timestamp: '2025-10-19T11:30:00.000Z'
+                      request_id: 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+                      request_duration: 60
+                    data:
+                      details: 'Password has been reset'
+        '400':
+          description: Invalid code or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                invalid:
+                  value:
+                    meta:
+                      code: '400001'
+                      type: 'VALIDATION_ERROR'
+                      message: 'Invalid verification code'
+                      timestamp: '2025-10-19T11:31:00.000Z'
+                      request_id: '10101010-1010-4101-8101-101010101010'
+                      request_duration: 11
+                    data:
+                      details: 'Code is invalid or expired'
+                      path: '/api/v1/auth/reset-password'
+                      method: 'POST'
+
+  # -------------------------
+  # USER & USER SETTINGS
+  # -------------------------
+
+  /users/me:
+    get:
+      summary: Get current user's profile
+      tags:
+      - Users
+      responses:
+        '200':
+          description: User fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseUserFetch'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: '200200'
+                      type: 'USER_FETCH_SUCCESS'
+                      message: 'User fetched successfully'
+                      timestamp: '2025-11-04T12:00:00.000Z'
+                      request_id: 'aaaaaaaa-bbbb-4ccc-8ddd-aaaaaaaaaaaa'
+                      request_duration: 45
+                    data:
+                      user:
+                        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+                        email: 'storius.test@gmail.com'
+                        full_name: 'Storius'
+                        avatar: 'https://cdn.example.com/avatars/aaaaaaaa.png'
+                        created_at: '2025-10-01T08:00:00.000Z'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                unauthorized:
+                  value:
+                    meta:
+                      code: '401002'
+                      type: 'AUTH_UNAUTHORIZED'
+                      message: 'Unauthorized access'
+                      timestamp: '2025-11-04T12:00:05.000Z'
+                      request_id: 'bbbbbbbb-cccc-4ddd-8eee-bbbbbbbbbbbb'
+                      request_duration: 2
+                    data:
+                      details: 'Missing or invalid access token'
+                      path: '/api/v1/users/me'
+                      method: 'GET'
+
+    patch:
+      summary: Update current user's profile
+      tags:
+      - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+            examples:
+              sample:
+                value:
+                  full_name: 'Storius New'
+                  avatar: 'https://cdn.example.com/tmp/aaaaaaaa.png'
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseUserUpdate'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: '200201'
+                      type: 'USER_UPDATE_SUCCESS'
+                      message: 'User updated successfully'
+                      timestamp: '2025-11-04T12:05:00.000Z'
+                      request_id: 'cccccccc-dddd-4eee-8fff-cccccccccccc'
+                      request_duration: 30
+                    data:
+                      user:
+                        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+                        email: 'storius.test@gmail.com'
+                        full_name: 'Storius New'
+                        avatar: 'https://cdn.example.com/avatars/aaaaaaaa.png'
+                        updated_at: '2025-11-04T12:05:00.000Z'
+        '400':
+          description: Validation error (bad payload)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                invalid_payload:
+                  value:
+                    meta:
+                      code: '400001'
+                      type: 'VALIDATION_ERROR'
+                      message: 'Bad request'
+                      timestamp: '2025-11-04T12:05:05.000Z'
+                      request_id: 'dddddddd-eeee-4fff-8aaa-dddddddddddd'
+                      request_duration: 8
+                    data:
+                      details: 'full_name is required'
+                      path: '/api/v1/users/me'
+                      method: 'PATCH'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                not_auth:
+                  value:
+                    meta:
+                      code: '401002'
+                      type: 'AUTH_UNAUTHORIZED'
+                      message: 'Unauthorized access'
+                      timestamp: '2025-11-04T12:05:10.000Z'
+                      request_id: 'eeeeeeee-ffff-4aaa-8bbb-eeeeeeeeeeee'
+                      request_duration: 3
+                    data:
+                      details: 'Missing or invalid access token'
+                      path: '/api/v1/users/me'
+                      method: 'PATCH'
+
+    delete:
+      summary: Soft delete current user's account
+      tags:
+      - Users
+      responses:
+        '200':
+          description: User deleted (soft)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseGenericSuccess'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: '200000'
+                      type: 'SUCCESS'
+                      message: 'Operation completed successfully'
+                      timestamp: '2025-11-04T12:10:00.000Z'
+                      request_id: 'ffffffff-1111-4bbb-8ccc-ffffffffffff'
+                      request_duration: 56
+                    data:
+                      details: 'User soft-deleted'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                not_auth:
+                  value:
+                    meta:
+                      code: '401002'
+                      type: 'AUTH_UNAUTHORIZED'
+                      message: 'Unauthorized access'
+                      timestamp: '2025-11-04T12:10:05.000Z'
+                      request_id: '12121212-1212-4121-8121-121212121212'
+                      request_duration: 2
+                    data:
+                      details: 'Missing or invalid access token'
+                      path: '/api/v1/users/me'
+                      method: 'DELETE'
+
+  /users/me/avatar:
+    post:
+      summary: Upload or change user's avatar
+      tags:
+      - Users
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                avatar:
+                  type: string
+                  format: binary
+            encoding:
+              avatar:
+                contentType: image/png, image/jpeg
+      responses:
+        '200':
+          description: Avatar upload success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseAvatarUpload'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: '200300'
+                      type: 'UPLOAD_FILE_SUCCESS'
+                      message: 'File uploaded successfully'
+                      timestamp: '2025-11-04T12:15:00.000Z'
+                      request_id: '21212121-2121-4212-8121-212121212121'
+                      request_duration: 140
+                    data:
+                      avatar_url: 'https://cdn.example.com/avatars/aaaaaaaa.png'
+                      uploaded_at: '2025-11-04T12:15:00.000Z'
+        '400':
+          description: Invalid file type or too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                invalid_file:
+                  value:
+                    meta:
+                      code: '415001'
+                      type: 'UPLOAD_INVALID_TYPE'
+                      message: 'Invalid file type'
+                      timestamp: '2025-11-04T12:15:05.000Z'
+                      request_id: '31313131-3131-4313-8131-313131313131'
+                      request_duration: 3
+                    data:
+                      details: 'File must be PNG or JPEG and <= 2MB'
+                      path: '/api/v1/users/me/avatar'
+                      method: 'POST'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                not_auth:
+                  value:
+                    meta:
+                      code: '401002'
+                      type: 'AUTH_UNAUTHORIZED'
+                      message: 'Unauthorized access'
+                      timestamp: '2025-11-04T12:15:08.000Z'
+                      request_id: '41414141-4141-4414-8141-414141414141'
+                      request_duration: 2
+                    data:
+                      details: 'Missing or invalid access token'
+                      path: '/api/v1/users/me/avatar'
+                      method: 'POST'
+
+  /users/settings:
+    get:
+      summary: Get current user's settings
+      tags:
+      - Users
+      responses:
+        '200':
+          description: Settings fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseSettingsFetch'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: '200200'
+                      type: 'USER_FETCH_SUCCESS'
+                      message: 'User fetched successfully'
+                      timestamp: '2025-11-04T12:20:00.000Z'
+                      request_id: '51515151-5151-4515-8151-515151515151'
+                      request_duration: 22
+                    data:
+                      settings:
+                        preferred_currency: 'vnd'
+                        default_monthly_budget: 5000000
+                        budget_alert: true
+                        subscription_reminder: true
+                        budget_start_day: 5
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                not_auth:
+                  value:
+                    meta:
+                      code: '401002'
+                      type: 'AUTH_UNAUTHORIZED'
+                      message: 'Unauthorized access'
+                      timestamp: '2025-11-04T12:20:05.000Z'
+                      request_id: '61616161-6161-4616-8161-616161616161'
+                      request_duration: 2
+                    data:
+                      details: 'Missing or invalid access token'
+                      path: '/api/v1/users/settings'
+                      method: 'GET'
+
+    patch:
+      summary: Update current user's settings
+      tags:
+      - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserSettingsUpdateRequest'
+            examples:
+              sample:
+                value:
+                  preferred_currency: 'vnd'
+                  default_monthly_budget: 5000000
+                  budget_alert: true
+                  subscription_reminder: false
+                  budget_start_day: 10
+      responses:
+        '200':
+          description: Settings updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseSettingsUpdate'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: '200201'
+                      type: 'USER_UPDATE_SUCCESS'
+                      message: 'User updated successfully'
+                      timestamp: '2025-11-04T12:25:00.000Z'
+                      request_id: '71717171-7171-4717-8171-717171717171'
+                      request_duration: 40
+                    data:
+                      settings:
+                        preferred_currency: 'vnd'
+                        default_monthly_budget: 5000000
+                        budget_alert: true
+                        subscription_reminder: false
+                        budget_start_day: 10
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                invalid:
+                  value:
+                    meta:
+                      code: '400001'
+                      type: 'VALIDATION_ERROR'
+                      message: 'Bad request'
+                      timestamp: '2025-11-04T12:25:05.000Z'
+                      request_id: '81818181-8181-4818-8181-818181818181'
+                      request_duration: 6
+                    data:
+                      details: 'budget_start_day must be an integer between 1 and 28'
+                      path: '/api/v1/users/settings'
+                      method: 'PATCH'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardErrorResponse'
+              examples:
+                not_auth:
+                  value:
+                    meta:
+                      code: '401002'
+                      type: 'AUTH_UNAUTHORIZED'
+                      message: 'Unauthorized access'
+                      timestamp: '2025-11-04T12:25:08.000Z'
+                      request_id: '91919191-9191-4919-8191-919191919191'
+                      request_duration: 2
+                    data:
+                      details: 'Missing or invalid access token'
+                      path: '/api/v1/users/settings'
+                      method: 'PATCH'
+
+  /categories:
+    get:
+      summary: Get all categories for current user
+      tags: [ Categories ]
+      responses:
+        "200":
+          description: Categories fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseCategoryList'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200211"
+                      type: "CATEGORY_FETCH_SUCCESS"
+                      message: "Categories fetched successfully"
+                      timestamp: "2025-11-04T12:40:00.000Z"
+                      request_id: "c1111111-c111-4111-8111-c11111111111"
+                      request_duration: 60
+                    data:
+                      categories:
+                      - id: "cat-1"
+                        name: "Food & Drinks"
+                        icon: "🍔"
+                        color: "red"
+                        usage_count: 24
+                      - id: "cat-2"
+                        name: "Transport"
+                        icon: "🚗"
+                        color: "green"
+                        usage_count: 8
+    post:
+      summary: Create new category
+      tags: [ Categories ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryCreateRequest'
+            examples:
+              sample:
+                value:
+                  name: "Entertainment"
+                  icon: "🎮"
+                  color: "purple"
+      responses:
+        "200":
+          description: Category created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseCategoryCreate'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200210"
+                      type: "CATEGORY_CREATE_SUCCESS"
+                      message: "Category created successfully"
+                      timestamp: "2025-11-04T12:41:00.000Z"
+                      request_id: "c2222222-c222-4222-8222-c22222222222"
+                      request_duration: 75
+                    data:
+                      category:
+                        id: "cat-3"
+                        name: "Entertainment"
+                        icon: "🎮"
+                        color: "purple"
+                        usage_count: 0
+                        created_at: "2025-11-04T12:41:00.000Z"
+
+  /categories/{id}:
+    get:
+      summary: Get single category by ID
+      tags: [ Categories ]
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Category fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseCategorySingle'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200211"
+                      type: "CATEGORY_FETCH_SUCCESS"
+                      message: "Category fetched successfully"
+                      timestamp: "2025-11-04T12:42:00.000Z"
+                      request_id: "c3333333-c333-4333-8333-c33333333333"
+                      request_duration: 50
+                    data:
+                      category:
+                        id: "cat-2"
+                        name: "Transport"
+                        icon: "🚗"
+                        color: "green"
+                        usage_count: 8
+    patch:
+      summary: Update category
+      tags: [ Categories ]
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryUpdateRequest'
+      responses:
+        "200":
+          description: Category updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseCategorySingle'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200000"
+                      type: "SUCCESS"
+                      message: "Operation completed successfully"
+                      timestamp: "2025-11-04T12:43:00.000Z"
+                      request_id: "c4444444-c444-4444-8444-c44444444444"
+                      request_duration: 43
+                    data:
+                      category:
+                        id: "cat-2"
+                        name: "Transportation"
+                        icon: "🚗"
+                        color: "blue"
+    delete:
+      summary: Soft delete category
+      tags: [ Categories ]
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Category deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseGenericSuccess'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200000"
+                      type: "SUCCESS"
+                      message: "Operation completed successfully"
+                      timestamp: "2025-11-04T12:44:00.000Z"
+                      request_id: "c5555555-c555-4555-8555-c55555555555"
+                      request_duration: 30
+                    data:
+                      details: "Category soft-deleted"
+
+  # -------------------------
+  # BUDGET TEMPLATES
+  # -------------------------
+  /budget-templates:
+    get:
+      summary: Get all active budget templates
+      tags: [ Budgets ]
+      responses:
+        "200":
+          description: Templates fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseBudgetTemplateList'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200221"
+                      type: "BUDGET_FETCH_SUCCESS"
+                      message: "Budget templates fetched successfully"
+                      timestamp: "2025-11-04T12:50:00.000Z"
+                      request_id: "b1111111-b111-4111-8111-b11111111111"
+                      request_duration: 52
+                    data:
+                      templates:
+                      - id: "tmpl-1"
+                        category_id: "cat-1"
+                        limit_amount: 3000000
+                        alert_threshold: 80
+                        active: true
+                      - id: "tmpl-2"
+                        category_id: "cat-2"
+                        limit_amount: 1500000
+                        alert_threshold: 90
+                        active: true
+    post:
+      summary: Create new budget template
+      tags: [ Budgets ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetTemplateCreateRequest'
+      responses:
+        "200":
+          description: Template created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseBudgetTemplateSingle'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200220"
+                      type: "BUDGET_CREATE_SUCCESS"
+                      message: "Budget template created successfully"
+                      timestamp: "2025-11-04T12:51:00.000Z"
+                      request_id: "b2222222-b222-4222-8222-b22222222222"
+                      request_duration: 88
+                    data:
+                      template:
+                        id: "tmpl-3"
+                        category_id: "cat-3"
+                        limit_amount: 2000000
+                        alert_threshold: 85
+                        active: true
+
+  /budget-periods:
+    get:
+      summary: Get budget periods for user
+      tags: [ Budgets ]
+      parameters:
+      - name: month
+        in: query
+        schema:
+          type: string
+          example: "2025-11"
+      responses:
+        "200":
+          description: Budget periods fetched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseBudgetPeriodList'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200221"
+                      type: "BUDGET_FETCH_SUCCESS"
+                      message: "Budget periods fetched successfully"
+                      timestamp: "2025-11-04T13:00:00.000Z"
+                      request_id: "b3333333-b333-4333-8333-b33333333333"
+                      request_duration: 110
+                    data:
+                      periods:
+                      - id: "p1"
+                        category_id: "cat-1"
+                        limit_amount: 3000000
+                        spent_amount: 1450000
+                        period_start: "2025-11-01"
+                        period_end: "2025-11-30"
+                      - id: "p2"
+                        category_id: "cat-2"
+                        limit_amount: 1500000
+                        spent_amount: 200000
+                        period_start: "2025-11-01"
+                        period_end: "2025-11-30"
+    post:
+      summary: Generate next budget period from active templates
+      tags: [ Budgets ]
+      responses:
+        "200":
+          description: Budget periods generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseGenericSuccess'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200000"
+                      type: "SUCCESS"
+                      message: "Operation completed successfully"
+                      timestamp: "2025-11-04T13:05:00.000Z"
+                      request_id: "b4444444-b444-4444-8444-b44444444444"
+                      request_duration: 200
+                    data:
+                      details: "Budget periods for next month created"
+
+  # -------------------------
+  # EXPENSES
+  # -------------------------
+  /expenses:
+    get:
+      summary: Get list of expenses (optionally filter by month/category)
+      tags: [ Expenses ]
+      parameters:
+      - name: month
+        in: query
+        schema:
+          type: string
+          example: "2025-11"
+      - name: category_id
+        in: query
+        schema:
+          type: string
+          example: "cat-1"
+      responses:
+        "200":
+          description: Expenses fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseExpenseList'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200000"
+                      type: "SUCCESS"
+                      message: "Expenses fetched successfully"
+                      timestamp: "2025-11-04T13:10:00.000Z"
+                      request_id: "e1111111-e111-4111-8111-e11111111111"
+                      request_duration: 40
+                    data:
+                      expenses:
+                      - id: "exp-1"
+                        category_id: "cat-1"
+                        amount: 75000
+                        timestamp: "2025-11-04T10:00:00Z"
+                        note: "Breakfast"
+                      - id: "exp-2"
+                        category_id: "cat-2"
+                        amount: 200000
+                        timestamp: "2025-11-03T15:00:00Z"
+                        note: "Taxi"
+    post:
+      summary: Create new expense
+      tags: [ Expenses ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseCreateRequest'
+            examples:
+              sample:
+                value:
+                  category_id: "cat-1"
+                  amount: 120000
+                  timestamp: "2025-11-04T12:00:00Z"
+                  note: "Lunch"
+      responses:
+        "200":
+          description: Expense created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseExpenseSingle'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200000"
+                      type: "SUCCESS"
+                      message: "Expense created successfully"
+                      timestamp: "2025-11-04T13:11:00.000Z"
+                      request_id: "e2222222-e222-4222-8222-e22222222222"
+                      request_duration: 65
+                    data:
+                      expense:
+                        id: "exp-3"
+                        category_id: "cat-1"
+                        amount: 120000
+                        timestamp: "2025-11-04T12:00:00Z"
+                        note: "Lunch"
+
+  /expenses/{id}:
+    patch:
+      summary: Update an expense
+      tags: [ Expenses ]
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExpenseUpdateRequest'
+      responses:
+        "200":
+          description: Expense updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseExpenseSingle'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200000"
+                      type: "SUCCESS"
+                      message: "Expense updated successfully"
+                      timestamp: "2025-11-04T13:12:00.000Z"
+                      request_id: "e3333333-e333-4333-8333-e33333333333"
+                      request_duration: 55
+                    data:
+                      expense:
+                        id: "exp-3"
+                        category_id: "cat-1"
+                        amount: 100000
+                        timestamp: "2025-11-04T12:00:00Z"
+                        note: "Lunch with friend"
+    delete:
+      summary: Delete (soft) an expense
+      tags: [ Expenses ]
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Expense deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseGenericSuccess'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200000"
+                      type: "SUCCESS"
+                      message: "Expense deleted successfully"
+                      timestamp: "2025-11-04T13:13:00.000Z"
+                      request_id: "e4444444-e444-4444-8444-e44444444444"
+                      request_duration: 38
+                    data:
+                      details: "Expense soft-deleted"
+
+  # -------------------------
+  # SUBSCRIPTIONS
+  # -------------------------
+  /subscriptions:
+    get:
+      summary: Get all subscriptions for user
+      tags: [ Subscriptions ]
+      responses:
+        "200":
+          description: Subscriptions fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseSubscriptionList'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200000"
+                      type: "SUCCESS"
+                      message: "Subscriptions fetched successfully"
+                      timestamp: "2025-11-04T13:15:00.000Z"
+                      request_id: "s1111111-s111-4111-8111-s11111111111"
+                      request_duration: 72
+                    data:
+                      subscriptions:
+                      - id: "sub-1"
+                        name: "Netflix"
+                        amount: 250000
+                        frequency: "monthly"
+                        next_payment_date: "2025-11-10"
+                        status: "active"
+                      - id: "sub-2"
+                        name: "Spotify"
+                        amount: 59000
+                        frequency: "monthly"
+                        next_payment_date: "2025-11-15"
+                        status: "active"
+    post:
+      summary: Create subscription
+      tags: [ Subscriptions ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionCreateRequest'
+      responses:
+        "200":
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseSubscriptionSingle'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200000"
+                      type: "SUCCESS"
+                      message: "Subscription created successfully"
+                      timestamp: "2025-11-04T13:16:00.000Z"
+                      request_id: "s2222222-s222-4222-8222-s22222222222"
+                      request_duration: 68
+                    data:
+                      subscription:
+                        id: "sub-3"
+                        name: "YouTube Premium"
+                        amount: 119000
+                        frequency: "monthly"
+                        next_payment_date: "2025-11-25"
+                        status: "active"
+
+  /subscriptions/{id}:
+    patch:
+      summary: Update subscription
+      tags: [ Subscriptions ]
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionUpdateRequest'
+      responses:
+        "200":
+          description: Subscription updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseSubscriptionSingle'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200000"
+                      type: "SUCCESS"
+                      message: "Subscription updated successfully"
+                      timestamp: "2025-11-04T13:17:00.000Z"
+                      request_id: "s3333333-s333-4333-8333-s33333333333"
+                      request_duration: 45
+                    data:
+                      subscription:
+                        id: "sub-3"
+                        name: "YouTube Premium"
+                        amount: 129000
+                        frequency: "monthly"
+                        status: "active"
+    delete:
+      summary: Cancel subscription (soft delete)
+      tags: [ Subscriptions ]
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Subscription canceled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseGenericSuccess'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200000"
+                      type: "SUCCESS"
+                      message: "Subscription canceled successfully"
+                      timestamp: "2025-11-04T13:18:00.000Z"
+                      request_id: "s4444444-s444-4444-8444-s44444444444"
+                      request_duration: 39
+                    data:
+                      details: "Subscription set inactive"
+
+  # -------------------------
+  # EXPENSE SUMMARIES
+  # -------------------------
+  /summaries:
+    get:
+      summary: Get expense summaries by month or category
+      tags: [ Summaries ]
+      parameters:
+      - name: month
+        in: query
+        schema:
+          type: string
+          example: "2025-11"
+      - name: category_id
+        in: query
+        schema:
+          type: string
+          example: "cat-1"
+      responses:
+        "200":
+          description: Summaries fetched successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StandardResponseExpenseSummaryList'
+              examples:
+                success:
+                  value:
+                    meta:
+                      code: "200000"
+                      type: "SUCCESS"
+                      message: "Expense summaries fetched successfully"
+                      timestamp: "2025-11-04T13:25:00.000Z"
+                      request_id: "x1111111-x111-4111-8111-x11111111111"
+                      request_duration: 70
+                    data:
+                      summaries:
+                      - id: "sum-1"
+                        category_id: "cat-1"
+                        period_start: "2025-11-01"
+                        period_end: "2025-11-30"
+                        total_amount: 4200000
+                        transaction_count: 15
+                      - id: "sum-2"
+                        category_id: "cat-2"
+                        period_start: "2025-11-01"
+                        period_end: "2025-11-30"
+                        total_amount: 870000
+                        transaction_count: 5
+
+  # -------------------------
+  # HEALTH CHECK
+  # -------------------------
+  /health:
+    get:
+      summary: Check application health status
+      description: Comprehensive health check including database, memory, and disk storage
+      tags: [ Health ]
+      responses:
+        "200":
+          description: Application is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  info:
+                    type: object
+                    properties:
+                      database:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            example: "up"
+                      memory_heap:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            example: "up"
+                      memory_rss:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            example: "up"
+                      storage:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            example: "up"
+                  error:
+                    type: object
+                  details:
+                    type: object
+              examples:
+                healthy:
+                  value:
+                    status: "ok"
+                    info:
+                      database:
+                        status: "up"
+                      memory_heap:
+                        status: "up"
+                      memory_rss:
+                        status: "up"
+                      storage:
+                        status: "up"
+                    error: {}
+                    details:
+                      database:
+                        status: "up"
+                      memory_heap:
+                        status: "up"
+                      memory_rss:
+                        status: "up"
+                      storage:
+                        status: "up"
+        "503":
+          description: Application is unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+              examples:
+                unhealthy:
+                  value:
+                    status: "error"
+                    error:
+                      database:
+                        status: "down"
+                        message: "Connection timeout"
+
+  /health/ready:
+    get:
+      summary: Check if application is ready
+      description: Readiness probe for container orchestration
+      tags: [ Health ]
+      responses:
+        "200":
+          description: Application is ready
+          content:
+            application/json:
+              schema:
+                type: object
+              examples:
+                ready:
+                  value:
+                    code: "200500"
+                    type: "HEALTH_CHECK"
+                    message: "Health check successful"
+                    data:
+                      status: "ok"
+                      timestamp: "2025-11-15T10:30:00.000Z"
+                      uptime: 86400
+
+  /health/live:
+    get:
+      summary: Check if application is alive
+      description: Liveness probe for container orchestration
+      tags: [ Health ]
+      responses:
+        "200":
+          description: Application is alive
+          content:
+            application/json:
+              schema:
+                type: object
+              examples:
+                alive:
+                  value:
+                    code: "200500"
+                    type: "HEALTH_CHECK"
+                    message: "Health check successful"
+                    data:
+                      status: "ok"
+                      timestamp: "2025-11-15T10:30:00.000Z"
+
+components:
+  schemas:
+    # -------------------------
+    # META
+    # -------------------------
+    Meta:
+      type: object
+      properties:
+        code:
+          type: string
+          example: '200000'
+        type:
+          type: string
+          example: 'SUCCESS'
+        message:
+          type: string
+          example: 'Operation completed successfully'
+        timestamp:
+          type: string
+          format: date-time
+          example: '2025-10-19T10:30:00.000Z'
+        request_id:
+          type: string
+          format: uuid
+          example: '11111111-1111-4111-8111-111111111111'
+        request_duration:
+          type: integer
+          example: 123
+
+    # -------------------------
+    # CATEGORY SCHEMAS
+    # -------------------------
+    Category:
+      type: object
+      properties:
+        id: { type: string, example: "cat-1" }
+        name: { type: string, example: "Food & Drinks" }
+        icon: { type: string, example: "🍔" }
+        color: { type: string, example: "red" }
+        usage_count: { type: integer, example: 24 }
+
+    CategoryCreateRequest:
+      type: object
+      required: [ name ]
+      properties:
+        name: { type: string }
+        icon: { type: string }
+        color: { type: string }
+
+    CategoryUpdateRequest:
+      type: object
+      properties:
+        name: { type: string }
+        icon: { type: string }
+        color: { type: string }
+
+    StandardResponseCategoryList:
+      type: object
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          properties:
+            categories:
+              type: array
+              items: { $ref: '#/components/schemas/Category' }
+
+    StandardResponseCategorySingle:
+      type: object
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          properties:
+            category: { $ref: '#/components/schemas/Category' }
+
+    StandardResponseCategoryCreate:
+      type: object
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          properties:
+            category: { $ref: '#/components/schemas/Category' }
+
+    # -------------------------
+    # BUDGET SCHEMAS
+    # -------------------------
+    BudgetTemplate:
+      type: object
+      properties:
+        id: { type: string, example: "tmpl-1" }
+        category_id: { type: string, example: "cat-1" }
+        limit_amount: { type: number, example: 3000000 }
+        alert_threshold: { type: integer, example: 80 }
+        active: { type: boolean, example: true }
+
+    BudgetTemplateCreateRequest:
+      type: object
+      required: [ category_id, limit_amount ]
+      properties:
+        category_id: { type: string }
+        limit_amount: { type: number }
+        alert_threshold: { type: integer }
+        active: { type: boolean }
+
+    StandardResponseBudgetTemplateList:
+      type: object
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          properties:
+            templates:
+              type: array
+              items: { $ref: '#/components/schemas/BudgetTemplate' }
+
+    StandardResponseBudgetTemplateSingle:
+      type: object
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          properties:
+            template: { $ref: '#/components/schemas/BudgetTemplate' }
+
+    BudgetPeriod:
+      type: object
+      properties:
+        id: { type: string, example: "p1" }
+        category_id: { type: string, example: "cat-1" }
+        limit_amount: { type: number, example: 3000000 }
+        spent_amount: { type: number, example: 1450000 }
+        period_start: { type: string, format: date, example: "2025-11-01" }
+        period_end: { type: string, format: date, example: "2025-11-30" }
+
+    StandardResponseBudgetPeriodList:
+      type: object
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          properties:
+            periods:
+              type: array
+              items: { $ref: '#/components/schemas/BudgetPeriod' }
+
+    # -------------------------
+    # EXPENSE SCHEMAS
+    # -------------------------
+    Expense:
+      type: object
+      properties:
+        id: { type: string, example: "exp-1" }
+        category_id: { type: string, example: "cat-1" }
+        amount: { type: number, example: 150000 }
+        timestamp: { type: string, format: date-time }
+        note: { type: string, example: "Lunch" }
+
+    ExpenseCreateRequest:
+      type: object
+      required: [ category_id, amount, timestamp ]
+      properties:
+        category_id: { type: string }
+        amount: { type: number }
+        timestamp: { type: string, format: date-time }
+        note: { type: string }
+
+    ExpenseUpdateRequest:
+      type: object
+      properties:
+        amount: { type: number }
+        note: { type: string }
+
+    StandardResponseExpenseList:
+      type: object
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          properties:
+            expenses:
+              type: array
+              items: { $ref: '#/components/schemas/Expense' }
+
+    StandardResponseExpenseSingle:
+      type: object
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          properties:
+            expense: { $ref: '#/components/schemas/Expense' }
+
+    # -------------------------
+    # SUBSCRIPTION SCHEMAS
+    # -------------------------
+    Subscription:
+      type: object
+      properties:
+        id: { type: string, example: "sub-1" }
+        category_id: { type: string, example: "cat-2" }
+        name: { type: string, example: "Netflix" }
+        amount: { type: number, example: 250000 }
+        frequency: { type: string, example: "monthly" }
+        next_payment_date: { type: string, format: date }
+        auto_create_expense: { type: boolean, example: true }
+        status: { type: string, example: "active" }
+        notes: { type: string }
+
+    SubscriptionCreateRequest:
+      type: object
+      required: [ category_id, name, amount, frequency, next_payment_date ]
+      properties:
+        category_id: { type: string }
+        name: { type: string }
+        amount: { type: number }
+        frequency: { type: string, enum: [ "weekly", "monthly", "yearly", "custom" ] }
+        custom_interval: { type: integer }
+        next_payment_date: { type: string, format: date }
+        auto_create_expense: { type: boolean }
+        notes: { type: string }
+
+    SubscriptionUpdateRequest:
+      type: object
+      properties:
+        name: { type: string }
+        amount: { type: number }
+        frequency: { type: string }
+        next_payment_date: { type: string, format: date }
+        auto_create_expense: { type: boolean }
+        status: { type: string }
+
+    StandardResponseSubscriptionList:
+      type: object
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          properties:
+            subscriptions:
+              type: array
+              items: { $ref: '#/components/schemas/Subscription' }
+
+    StandardResponseSubscriptionSingle:
+      type: object
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          properties:
+            subscription: { $ref: '#/components/schemas/Subscription' }
+
+    # -------------------------
+    # EXPENSE SUMMARY SCHEMAS
+    # -------------------------
+    ExpenseSummary:
+      type: object
+      properties:
+        id: { type: string, example: "sum-1" }
+        category_id: { type: string, example: "cat-1" }
+        period_start: { type: string, format: date, example: "2025-11-01" }
+        period_end: { type: string, format: date, example: "2025-11-30" }
+        total_amount: { type: number, example: 4200000 }
+        transaction_count: { type: integer, example: 15 }
+
+    StandardResponseExpenseSummaryList:
+      type: object
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          properties:
+            summaries:
+              type: array
+              items: { $ref: '#/components/schemas/ExpenseSummary' }
+
+    # -------------------------
+    # HEALTH SCHEMAS
+    # -------------------------
+    StandardResponseHealth:
+      type: object
+      properties:
+        meta: { $ref: '#/components/schemas/Meta' }
+        data:
+          type: object
+          properties:
+            uptime: { type: string, example: "24h 15m" }
+            database: { type: string, example: "connected" }
+            redis: { type: string, example: "connected" }
+            version: { type: string, example: "1.0.0" }
+
+    # -------------------------
+    # STANDARD RESPONSES
+    # -------------------------
+    StandardErrorResponse:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: object
+          properties:
+            details:
+              type: string
+              example: 'Detailed error description'
+            path:
+              type: string
+              example: '/api/v1/auth/register'
+            method:
+              type: string
+              example: 'POST'
+
+    StandardResponseGenericSuccess:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: object
+          properties:
+            details:
+              type: string
+              example: 'Operation completed successfully'
+
+    # -------------------------
+    # AUTH SPECIFIC
+    # -------------------------
+    StandardResponseRegisterSuccess:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: object
+          properties:
+            accessToken:
+              type: string
+              example: 'eyJhbGciOiJIUzI1...'
+              description: 'JWT access token (refresh token sent as HTTP-only cookie)'
+            email:
+              type: string
+              example: 'storius.test@gmail.com'
+            fullName:
+              type: string
+              example: 'Storius'
+
+    StandardResponseLoginSuccess:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: object
+          properties:
+            accessToken:
+              type: string
+              example: 'eyJhbGciOiJIUzI1...'
+              description: 'JWT access token (refresh token sent as HTTP-only cookie)'
+            user:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                  example: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+                email:
+                  type: string
+                  example: 'storius.test@gmail.com'
+                fullName:
+                  type: string
+                  example: 'Storius'
+
+    StandardResponseRefreshSuccess:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: object
+          properties:
+            accessToken:
+              type: string
+              example: 'new-access-token'
+              description: 'New JWT access token (new refresh token sent as HTTP-only cookie)'
+
+    # -------------------------
+    # USER SPECIFIC
+    # -------------------------
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+        email:
+          type: string
+          example: 'storius.test@gmail.com'
+        fullName:
+          type: string
+          example: 'Storius'
+        avatar:
+          type: string
+          example: 'https://cdn.example.com/avatars/aaaaaaaa.png'
+        createdAt:
+          type: string
+          format: date-time
+          example: '2025-10-01T08:00:00.000Z'
+        updatedAt:
+          type: string
+          format: date-time
+          example: '2025-11-04T12:05:00.000Z'
+
+    StandardResponseUserFetch:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+
+    StandardResponseUserUpdate:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+
+    StandardResponseAvatarUpload:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: object
+          properties:
+            avatar_url:
+              type: string
+              example: 'https://cdn.example.com/avatars/aaaaaaaa.png'
+            uploaded_at:
+              type: string
+              format: date-time
+              example: '2025-11-04T12:15:00.000Z'
+
+    # -------------------------
+    # USER SETTINGS
+    # -------------------------
+    UserSettings:
+      type: object
+      properties:
+        preferred_currency:
+          type: string
+          enum:
+          - usd
+          - eur
+          - vnd
+          example: 'vnd'
+        default_monthly_budget:
+          type: number
+          format: double
+          example: 5000000
+        budget_alert:
+          type: boolean
+          example: true
+        subscription_reminder:
+          type: boolean
+          example: true
+        budget_start_day:
+          type: integer
+          example: 5
+        weekly_summary:
+          type: boolean
+          example: false
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    StandardResponseSettingsFetch:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: object
+          properties:
+            settings:
+              $ref: '#/components/schemas/UserSettings'
+
+    StandardResponseSettingsUpdate:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: object
+          properties:
+            settings:
+              $ref: '#/components/schemas/UserSettings'
+
+    # -------------------------
+    # REQUEST BODIES
+    # -------------------------
+    AuthRegisterRequest:
+      type: object
+      required:
+      - full_name
+      - email
+      - password
+      properties:
+        full_name:
+          type: string
+          example: 'Storius'
+        email:
+          type: string
+          format: email
+          example: 'storius.test@gmail.com'
+        password:
+          type: string
+          format: password
+          example: 'Testpassword123!'
+
+    AuthVerifyRequest:
+      type: object
+      required:
+      - email
+      - code
+      - type
+      properties:
+        email:
+          type: string
+          format: email
+          example: 'storius.test@gmail.com'
+        code:
+          type: string
+          example: '123456'
+        type:
+          type: string
+          enum:
+          - register
+          - forgot_password
+          example: register
+
+    AuthLoginRequest:
+      type: object
+      required:
+      - email
+      - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: 'storius.test@gmail.com'
+        password:
+          type: string
+          example: 'Testpassword123!'
+
+    AuthRefreshRequest:
+      type: object
+      properties:
+        _note:
+          type: string
+          description: 'No request body needed. Refresh token is automatically read from HTTP-only cookie named "refreshToken".'
+          example: 'This endpoint reads the refresh token from cookies, not the request body.'
+
+    AuthLogoutRequest:
+      type: object
+      properties:
+        _note:
+          type: string
+          description: 'No request body needed. Refresh token is automatically read from HTTP-only cookie. Access token is extracted from Authorization header (Bearer token).'
+          example: 'This endpoint reads tokens from cookies and headers, not the request body.'
+
+    AuthForgotPasswordRequest:
+      type: object
+      required:
+      - email
+      properties:
+        email:
+          type: string
+          format: email
+          example: 'storius.test@gmail.com'
+
+    AuthResetPasswordRequest:
+      type: object
+      required:
+      - code
+      - new_password
+      properties:
+        code:
+          type: string
+          example: '654321'
+          description: 'Verification code from email (already verified via /auth/verify endpoint)'
+        new_password:
+          type: string
+          format: password
+          example: 'NewPassw0rd!'
+          description: 'New password (must be at least 6 characters with number, lowercase, uppercase, and symbol)'
+
+    UserUpdateRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+          example: 'Storius New'
+        avatar:
+          type: string
+          example: 'https://cdn.example.com/tmp/aaaaaaaa.png'
+
+    UserSettingsUpdateRequest:
+      type: object
+      properties:
+        preferred_currency:
+          type: string
+          enum:
+          - usd
+          - eur
+          - vnd
+          example: 'vnd'
+        default_monthly_budget:
+          type: number
+          example: 5000000
+        budget_alert:
+          type: boolean
+          example: true
+        subscription_reminder:
+          type: boolean
+          example: true
+        budget_start_day:
+          type: integer
+          example: 5
+        weekly_summary:
+          type: boolean
+          example: false
+
+  securitySchemes: {}
+
+tags:
+- name: Auth
+  description: Authentication endpoints (register, login, refresh, logout, forgot/reset password)
+- name: Users
+  description: User profile and settings endpoints
+- name: Categories
+  description: Category management endpoints
+- name: Budgets
+  description: Budget template and period management endpoints
+- name: Expenses
+  description: Expense management endpoints
+- name: Subscriptions
+  description: Subscription management endpoints
+- name: Summaries
+  description: Expense summaries for analytics
+- name: Health
+  description: Health check endpoints for monitoring and container orchestration

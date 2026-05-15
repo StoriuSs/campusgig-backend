@@ -1,0 +1,125 @@
+export const MESSAGES = {
+    // Success messages
+    SUCCESS: {
+        OPERATION_SUCCESSFUL: 'Operation completed successfully',
+        CREATED: 'Resource created successfully',
+        UPDATED: 'Resource updated successfully',
+        DELETED: 'Resource deleted successfully'
+    },
+
+    // Auth messages
+    AUTH: {
+        LOGIN_SUCCESS: 'Login successful',
+        LOGOUT_SUCCESS: 'Logout successful',
+        REGISTER_SUCCESS: 'Registration successful. Check your email for verification code.',
+        VERIFY_CODE_REGISTER_SUCCESS: 'Code verified successfully. You can now login.',
+        VERIFY_CODE_RESET_SUCCESS: 'Code verified successfully. You can now reset your password.',
+        TOKEN_REFRESHED: 'Token refreshed successfully',
+        INVALID_CREDENTIALS: 'Invalid email or password',
+        INVALID_CURRENT_PASSWORD: 'Current password is incorrect',
+        UNAUTHORIZED: 'Unauthorized access',
+        TOKEN_MISSING: 'Authorization token is required',
+        TOKEN_EXPIRED: 'Token has expired',
+        TOKEN_INVALID: 'Invalid token',
+        TOKEN_REVOKED: 'Token has been revoked',
+        EMAIL_ALREADY_EXISTS: 'Email already exists',
+        USER_NOT_FOUND: 'User not found',
+        VERIFICATION_CODE_INVALID: 'Invalid or expired verification code',
+        VERIFICATION_CODE_EXPIRED: 'Verification code has expired',
+        REGISTRATION_SESSION_EXPIRED: 'Registration session expired. Please register again.',
+        CODE_VERIFIED: 'Code verified',
+        PASSWORD_RESET_CODE_SENT: 'Password reset code sent to email',
+        CHECK_EMAIL_FOR_RESET_CODE: 'Check your email for the reset code',
+        VERIFICATION_CODE_RESENT: 'Verification code resent successfully',
+        PASSWORD_RESET_SUCCESS: 'Password has been reset successfully',
+        PASSWORD_CHANGED_SUCCESS: 'Password has been changed successfully',
+        PASSWORD_SAME_AS_CURRENT: 'New password must be different from current password',
+        LOGIN_WITH_NEW_PASSWORD: 'You can now login with your new password',
+        EMAIL_NOT_VERIFIED: 'Email not verified. Please verify your email first.',
+        ACCOUNT_DISABLED: 'Account is disabled. Please contact support.',
+        LOGIN_FAILED: 'Login failed. Please try again.',
+        REFRESH_FAILED: 'Failed to refresh token. Please login again.',
+        REFRESH_TOKEN_EXPIRED: 'Refresh token has expired. Please login again.',
+        FORBIDDEN: 'You do not have permission to perform this action'
+    },
+
+    // Validation messages
+    VALIDATION: {
+        INVALID_EMAIL: 'Invalid email format',
+        INVALID_PASSWORD: 'Password must be at least 8 characters',
+        REQUIRED_FIELD: 'This field is required',
+        INVALID_UUID: 'Invalid UUID format'
+    },
+
+    // Error messages
+    ERROR: {
+        INTERNAL_SERVER_ERROR: 'Internal server error',
+        BAD_REQUEST: 'Bad request',
+        NOT_FOUND: 'Resource not found',
+        FORBIDDEN: 'Access forbidden'
+    },
+
+    // File upload messages
+    UPLOAD: {
+        SUCCESS: 'File uploaded successfully',
+        FAILED: 'File upload failed',
+        INVALID_FILE_TYPE: 'Invalid file type',
+        FILE_TOO_LARGE: 'File size exceeds the limit',
+        IMAGE_PROCESSING_FAILED: 'Failed to process image',
+        IMAGE_INVALID: 'Invalid or corrupted image file'
+    },
+
+    // Email messages
+    EMAIL: {
+        SENT: 'Email sent successfully',
+        FAILED: 'Failed to send email'
+    },
+
+    // User messages
+    USER: {
+        FETCHED: 'User fetched successfully',
+        UPDATED: 'User updated successfully',
+        DELETED: 'User deleted successfully',
+        ACCOUNT_DELETED: 'Account deleted successfully',
+        NOT_FOUND: 'User not found',
+        PROFILE_UPDATED: 'Profile updated successfully',
+        USERNAME_TAKEN: 'Username is already taken. Please choose another.',
+        USERNAME_SET_SUCCESS: 'Username set successfully',
+        USERNAME_ALREADY_SET: 'Username has already been set and cannot be changed'
+    },
+
+    // Health messages
+    HEALTH: {
+        CHECK_SUCCESS: 'Health check successful',
+        SERVICE_HEALTHY: 'All services are healthy',
+        SERVICE_UNHEALTHY: 'Some services are unhealthy'
+    },
+
+    // Cache messages
+    CACHE: {
+        SET_SUCCESS: 'Cache set successfully',
+        GET_SUCCESS: 'Cache retrieved successfully',
+        DELETE_SUCCESS: 'Cache deleted successfully',
+        CLEAR_SUCCESS: 'Cache cleared successfully',
+        NOT_FOUND: 'Cache key not found'
+    },
+
+    // Rate limiting messages
+    RATE_LIMIT: {
+        COOLDOWN_ACTIVE: 'Please wait {seconds} seconds before requesting another code',
+        DAILY_LIMIT_EXCEEDED: 'Daily limit exceeded. Please try again tomorrow.'
+    }
+}
+
+export const HTTP_STATUS_MESSAGES = {
+    200: 'OK',
+    201: 'Created',
+    400: 'Bad Request',
+    401: 'Unauthorized',
+    403: 'Forbidden',
+    404: 'Not Found',
+    409: 'Conflict',
+    422: 'Unprocessable Entity',
+    500: 'Internal Server Error',
+    503: 'Service Unavailable'
+}
