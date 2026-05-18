@@ -2,7 +2,7 @@
 
 # CampusGig Backend
 
-A production-ready backend for the CampusGig platform featuring Keycloak authentication, Prisma ORM, distributed caching, rate limiting,... and more.
+A production-ready backend for the CampusGig platform featuring Keycloak authentication, Prisma ORM, distributed caching, rate limiting, and more.
 
 [![Node.js](https://img.shields.io/badge/Node.js-≥20.0.0-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![NestJS](https://img.shields.io/badge/NestJS-10-E0234E?logo=nestjs&logoColor=white)](https://nestjs.com/)
