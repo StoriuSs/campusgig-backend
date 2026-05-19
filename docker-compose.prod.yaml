@@ -20,7 +20,7 @@ services:
     environment:
       NODE_ENV: production  # safety net in case .env.production is missing
     ports:
-      - "${PORT:-3000}:3000"
+      - "127.0.0.1:${PORT:-3000}:3000"  # Only reachable via Nginx on the host
     volumes:
       - app-uploads:/app/uploads
     depends_on:
@@ -152,7 +152,7 @@ services:
     volumes:
       - ./keycloak-plugins:/opt/keycloak/providers
     ports:
-      - "${KEYCLOAK_PORT}:8080"
+      - "127.0.0.1:${KEYCLOAK_PORT}:8080"  # Only reachable via Nginx on the host
     depends_on:
       db:
         condition: service_healthy
@@ -204,7 +204,7 @@ services:
     container_name: campusgig-grafana-prod
     image: grafana/grafana:11.0.0
     ports:
-      - "${GRAFANA_PORT:-3001}:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"  # Only reachable via Nginx on the host (or SSH tunnel)
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
