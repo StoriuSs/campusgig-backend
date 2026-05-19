@@ -113,7 +113,7 @@ services:
     volumes:
       - redis-data:/data   # Persist AOF + RDB snapshots
     ports:
-      - "127.0.0.1:${REDIS_PORT}:6379"  # Bind to localhost only
+      - "127.0.0.1:${REDIS_PORT}:6379"  # Bind to localhost only to block public internet access. Allows secure DB administration via SSH Tunneling (e.g., DBeaver)
     networks:
       - backend
     restart: unless-stopped
@@ -177,7 +177,7 @@ services:
     container_name: campusgig-prometheus-prod
     image: prom/prometheus:v2.50.1
     ports:
-      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"  # Localhost only
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"  # Internal port isolation. Hidden from public internet. Services communicate via internal Docker Network.
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
