@@ -125,10 +125,31 @@ systemctl enable --now nginx >/dev/null
 ok "Nginx reloaded and enabled at boot"
 
 # ─── Certbot (HTTPS) ─────────────────────────────────────────────────────────
+# Three possible paths:
+#   1. --skip-certbot     → skip entirely, warn user to run later
+#   2. Certs already exist → reinstall (no new cert issuance, just rewires
+#                            Nginx config — needed because re-running this
+#                            script rewrites Nginx from the template and
+#                            loses certbot's previously-injected 443 blocks)
+#   3. Fresh deploy       → certonly + install, full first-time setup
+CERT_DIR="/etc/letsencrypt/live/${FRONTEND_DOMAIN}"
+
 if [[ "$SKIP_CERTBOT" == "true" ]]; then
 	warn "Skipping certbot (--skip-certbot)"
 	warn "Run manually when DNS resolves:"
 	warn "  sudo certbot --nginx -d ${FRONTEND_DOMAIN} -d ${API_DOMAIN} -d ${AUTH_DOMAIN} --email ${EMAIL:-YOUR_EMAIL} --agree-tos --redirect --non-interactive"
+elif [[ -d "$CERT_DIR" ]]; then
+	log "Certificates already exist at ${CERT_DIR} — reinstalling (no new cert issuance)…"
+	# certbot install rewires the Nginx config to use the existing certs.
+	# --reinstall avoids the interactive "do you want to reinstall?" prompt
+	# that newer certbot versions show. --cert-name targets the existing
+	# certificate by its lineage name (typically the first domain).
+	certbot install --nginx \
+		--cert-name "$FRONTEND_DOMAIN" \
+		--redirect \
+		--non-interactive \
+		|| die "Certbot install failed — try 'sudo certbot --nginx -d ${FRONTEND_DOMAIN} -d ${API_DOMAIN} -d ${AUTH_DOMAIN} --redirect' manually"
+	ok "Certificates rewired; HTTP→HTTPS redirect re-applied"
 else
 	log "Obtaining Let's Encrypt certificates (certbot)…"
 	certbot --nginx \
@@ -141,8 +162,10 @@ else
 		--non-interactive \
 		|| die "Certbot failed — check that DNS A-records for all three domains point to this VPS"
 	ok "Certificates installed; HTTP→HTTPS redirect configured"
+fi
 
-	# Confirm renewal timer is active
+# Confirm renewal timer is active (regardless of which path above ran)
+if [[ "$SKIP_CERTBOT" != "true" ]]; then
 	if systemctl is-active --quiet certbot.timer; then
 		ok "certbot.timer is active (auto-renewal enabled)"
 	else
