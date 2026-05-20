@@ -34,7 +34,7 @@ FROM base AS deps
 # Copy package files first for layer caching.
 # pnpm-workspace.yaml holds pnpm v10+ settings (e.g., onlyBuiltDependencies).
 # Must be present at install time for the allowlist to take effect.
-COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml .npmrc ./
 
 # Install ALL dependencies (need devDependencies for building)
 RUN pnpm install --frozen-lockfile --ignore-scripts
@@ -96,7 +96,7 @@ RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 
 # Copy package files (pnpm-workspace.yaml carries the install-scripts allowlist)
-COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml .npmrc ./
 
 # Install production dependencies ONLY.
 #
