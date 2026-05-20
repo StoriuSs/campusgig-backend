@@ -38,7 +38,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      # 180s start_period gives the app time to wait for Keycloak's cold boot
+      # (60-90s) and the KeycloakAdminProvider retry loop. During this window,
+      # probe failures don't count against the retry budget.
+      start_period: 180s
     deploy:
       resources:
         limits:

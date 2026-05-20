@@ -24,7 +24,12 @@ SERVICES_TO_HEALTHCHECK=(
 	"campusgig-keycloak-prod"
 	"campusgig-app-prod"
 )
-HEALTH_TIMEOUT=180   # seconds to wait for all services to become healthy
+HEALTH_TIMEOUT=300   # seconds to wait for all services to become healthy.
+                     # Why 300s: Keycloak cold-boots in 60-90s, the app's
+                     # KeycloakAdminProvider has a 150s retry budget waiting
+                     # for it, plus NestJS init + the app's own healthcheck
+                     # start_period of 40s. Worst-case total is around 3
+                     # minutes; 5 minutes gives comfortable margin.
 HEALTH_INTERVAL=5    # seconds between healthcheck polls
 NGINX_RELOAD=true    # reload host nginx after deploy
 
