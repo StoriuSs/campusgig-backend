@@ -34,7 +34,9 @@ services:
       - backend
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health/live || exit 1"]
+      # /api/v1 is the global API prefix (set by API_PREFIX in .env + main.ts);
+      # the health route lives under it like every other endpoint.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/v1/health/live || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
