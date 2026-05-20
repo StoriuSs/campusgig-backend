@@ -31,12 +31,13 @@ WORKDIR /app
 # Install all dependencies (dev + prod) so both dev and build stages can use them
 FROM base AS deps
 
-# Copy package files first for layer caching.
-# pnpm-workspace.yaml holds pnpm v10+ settings (e.g., onlyBuiltDependencies).
-# Must be present at install time for the allowlist to take effect.
-COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml .npmrc ./
+# Copy package files first for layer caching
+COPY package.json pnpm-lock.yaml* .npmrc ./
 
-# Install ALL dependencies (need devDependencies for building)
+# Install ALL dependencies (need devDependencies for building).
+# --ignore-scripts is fine here because this stage only needs source code
+# to compile, not native bindings. The prod stage installs separately
+# with --allow-build flags for the packages that actually need scripts.
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # ----- STAGE 3: BUILD -----
@@ -95,19 +96,26 @@ ENV PRISMA_CLI_BINARY_TARGETS=linux-musl-openssl-3.0.x
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 
-# Copy package files (pnpm-workspace.yaml carries the install-scripts allowlist)
-COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml .npmrc ./
+# Copy package files
+COPY package.json pnpm-lock.yaml* .npmrc ./
 
 # Install production dependencies ONLY.
 #
 # pnpm v9+ ignores ALL install scripts by default (a security-by-default
-# improvement over the old npm/yarn behavior). We rely on the
-# `pnpm.onlyBuiltDependencies` allowlist in package.json to permit scripts
-# for the small set of packages that genuinely need them: Prisma (downloads
-# migration + query engines), sharp (downloads native image bindings),
-# msgpackr-extract (native bindings), @prisma/client/engines, @nestjs/core.
+# improvement over the old npm/yarn behavior). The --allow-build flags below
+# permit scripts for the small set of packages that genuinely need them:
+# Prisma (downloads migration + query engines), sharp (downloads native image
+# bindings), msgpackr-extract / unrs-resolver (native bindings), @nestjs/core.
 # Everything else stays sandboxed. See docs/supply-chain-and-install-scripts.md.
-RUN pnpm install --prod --frozen-lockfile && pnpm store prune
+RUN pnpm install --prod --frozen-lockfile \
+    --allow-build=@nestjs/core \
+    --allow-build=@prisma/client \
+    --allow-build=@prisma/engines \
+    --allow-build=msgpackr-extract \
+    --allow-build=prisma \
+    --allow-build=sharp \
+    --allow-build=unrs-resolver \
+    && pnpm store prune
 
 # Copy compiled output from build stage
 COPY --from=build /app/dist ./dist
