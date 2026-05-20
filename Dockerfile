@@ -72,13 +72,16 @@ CMD ["pnpm", "run", "dev"]
 # ----- STAGE 5: PRODUCTION -----
 # Minimal image with only what's needed to run the compiled app.
 #
-# Key design: Prisma engines (~80MB) are baked in at build time, NOT
-# downloaded at runtime. The build stage runs `prisma generate` against
-# schema.prisma which declares `binaryTargets = ["native", "linux-musl-openssl-3.0.x"]`,
-# so the Alpine-compatible engine is materialized into the build stage's
-# node_modules. We then copy the entire @prisma/engines tree into the
-# prod stage so the runtime container is fully self-contained: no
-# network access needed to start, no writable node_modules required.
+# Prisma engines are materialized into the image at build time, not at
+# runtime, via two paths:
+#  1. The pnpm install step runs Prisma's postinstall, which downloads
+#     the migration engine into node_modules/prisma/ (used by the CMD
+#     to run `prisma migrate deploy`).
+#  2. The build stage's `prisma generate` produces the query engine
+#     alongside the generated client at /app/generated/prisma/, which
+#     we copy below.
+# Both happen at build time, so the runtime container never needs to
+# download anything from Prisma's CDN.
 FROM base AS prod
 
 ENV NODE_ENV=production
@@ -93,21 +96,25 @@ RUN addgroup --system --gid 1001 nodejs && \
 # Copy package files
 COPY package.json pnpm-lock.yaml* ./
 
-# Install production dependencies ONLY. --ignore-scripts skips Prisma's
-# postinstall (which would try to re-download engines into a fresh
-# node_modules) — we copy them in from the build stage instead.
-RUN pnpm install --prod --frozen-lockfile --ignore-scripts && pnpm store prune
+# Install production dependencies ONLY. We DO NOT use --ignore-scripts here
+# because Prisma's postinstall is what downloads the engine binaries into
+# node_modules. Skipping it means the prisma CLI (used by `migrate deploy`
+# in the CMD below) won't have its engines available.
+#
+# Supply-chain risk note: we accept Prisma + adjacent packages running their
+# install scripts. This is the same trust we already give them at build time.
+RUN pnpm install --prod --frozen-lockfile && pnpm store prune
 
 # Copy compiled output from build stage
 COPY --from=build /app/dist ./dist
 
-# Copy generated Prisma client from build stage
+# Copy generated Prisma client + engines from build stage.
+# Because schema.prisma sets `binaryTargets = ["native", "linux-musl-openssl-3.0.x"]`
+# and `output = "../generated/prisma"`, the Alpine-compatible query engine
+# binary is produced alongside the client code in /app/generated/prisma/.
+# Copying this directory makes the prod image fully self-contained — no
+# runtime engine download needed.
 COPY --from=build /app/generated ./generated
-
-# Copy pre-downloaded Prisma engines from the build stage. This is what
-# makes the prod image self-contained — no runtime download.
-COPY --from=build /app/node_modules/@prisma/engines ./node_modules/@prisma/engines
-COPY --from=build /app/node_modules/.pnpm/@prisma+engines* ./node_modules/.pnpm/
 
 # Copy Prisma schema + migrations (needed for `prisma migrate deploy`)
 COPY prisma ./prisma
