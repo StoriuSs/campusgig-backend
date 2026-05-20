@@ -1,8 +1,16 @@
-allowBuilds:
-  '@nestjs/core': true
-  '@prisma/engines': true
-  '@scarf/scarf': true
-  msgpackr-extract: true
-  prisma: true
-  sharp: true
-  unrs-resolver: true
+# pnpm v10+ settings — moved here from package.json's `pnpm` field.
+# Docs: https://pnpm.io/settings#onlybuiltdependencies
+#
+# pnpm v9+ ignores ALL install scripts by default. This allowlist permits
+# scripts for the small set of packages that genuinely need them (native
+# bindings, Prisma engines, etc.). Everything else stays sandboxed.
+#
+# See docs/supply-chain-and-install-scripts.md for the rationale per package.
+onlyBuiltDependencies:
+  - '@nestjs/core'
+  - '@prisma/client'
+  - '@prisma/engines'
+  - msgpackr-extract
+  - prisma
+  - sharp
+  - unrs-resolver
