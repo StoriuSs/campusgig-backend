@@ -140,5 +140,10 @@ USER nestjs
 
 EXPOSE 3000
 
-# Run migrations then start the app
-CMD ["sh", "-c", "pnpm exec prisma migrate deploy && node dist/main"]
+# Run migrations then start the app.
+#
+# Note: the compiled entry point is at `dist/src/main.js`, not `dist/main.js`.
+# That's because the build step compiles `src/**/*.ts` alongside other
+# top-level TS files (e.g. prisma.config.ts), so the TypeScript compiler
+# preserves the `src/` directory in the output to disambiguate paths.
+CMD ["sh", "-c", "pnpm exec prisma migrate deploy && node dist/src/main"]
