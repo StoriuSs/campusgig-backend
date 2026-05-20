@@ -148,8 +148,6 @@ services:
       KC_HOSTNAME_STRICT: "true"
       KC_HTTP_PORT: 8080
       KC_PROXY_HEADERS: xforwarded     # Trust reverse proxy headers (nginx/traefik)
-      KC_HEALTH_ENABLED: "true"        # Expose /health/* endpoints on management port
-      KC_HTTP_MANAGEMENT_PORT: 9000    # Default. Health endpoints live here, not on 8080.
     command: start --optimized
     volumes:
       - ./keycloak-plugins:/opt/keycloak/providers
@@ -162,16 +160,18 @@ services:
       - backend
     restart: unless-stopped
     # Keycloak takes 60-90s to fully boot (cache provisioning, theme load,
-    # internal DB migrations). Use the built-in /health/ready endpoint on
-    # the management port. /opt/keycloak/bin/kc.sh is the only thing in
-    # the image we can rely on for probing — Keycloak's Alpine variant has
-    # no curl/wget. Falls back to bash test against the TCP socket.
+    # internal DB migrations). Probe the main HTTP port (8080) directly via
+    # bash's /dev/tcp facility — once that port is open and serving, Keycloak
+    # is ready to accept admin and OIDC traffic. We deliberately don't use
+    # /health/ready: it needs --health-enabled=true baked into the optimized
+    # build (which we don't control here), and even when it works, "TCP port
+    # is open and responding" is already good enough for our depends_on gate.
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '\"status\": \"UP\"' <&3"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET / HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q HTTP"]
       interval: 10s
       timeout: 5s
       retries: 12        # 12 retries × 10s = 2 minutes of patience after start_period
-      start_period: 60s  # Don't probe at all for first 60s — let Keycloak finish booting
+      start_period: 90s  # Keycloak's first boot can take this long on cold disk
     deploy:
       resources:
         limits:
