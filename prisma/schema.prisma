@@ -1,6 +1,10 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider      = "prisma-client"
+  output        = "../generated/prisma"
+  // Pre-generate engines for the platforms this client will run on.
+  // - native: whatever the build host is (covers local dev on Win/Mac/Linux)
+  // - linux-musl-openssl-3.0.x: Alpine 3.17+ with OpenSSL 3 (our prod image)
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {

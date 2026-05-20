@@ -70,10 +70,21 @@ EXPOSE 3000 9229
 CMD ["pnpm", "run", "dev"]
 
 # ----- STAGE 5: PRODUCTION -----
-# Minimal image with only what's needed to run the compiled app
+# Minimal image with only what's needed to run the compiled app.
+#
+# Key design: Prisma engines (~80MB) are baked in at build time, NOT
+# downloaded at runtime. The build stage runs `prisma generate` against
+# schema.prisma which declares `binaryTargets = ["native", "linux-musl-openssl-3.0.x"]`,
+# so the Alpine-compatible engine is materialized into the build stage's
+# node_modules. We then copy the entire @prisma/engines tree into the
+# prod stage so the runtime container is fully self-contained: no
+# network access needed to start, no writable node_modules required.
 FROM base AS prod
 
 ENV NODE_ENV=production
+# Tell Prisma which engine to load. Without this, Prisma auto-detects
+# the platform — usually fine, but explicit beats implicit in prod.
+ENV PRISMA_CLI_BINARY_TARGETS=linux-musl-openssl-3.0.x
 
 # Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs && \
@@ -82,7 +93,9 @@ RUN addgroup --system --gid 1001 nodejs && \
 # Copy package files
 COPY package.json pnpm-lock.yaml* ./
 
-# Install production dependencies ONLY
+# Install production dependencies ONLY. --ignore-scripts skips Prisma's
+# postinstall (which would try to re-download engines into a fresh
+# node_modules) — we copy them in from the build stage instead.
 RUN pnpm install --prod --frozen-lockfile --ignore-scripts && pnpm store prune
 
 # Copy compiled output from build stage
@@ -91,14 +104,21 @@ COPY --from=build /app/dist ./dist
 # Copy generated Prisma client from build stage
 COPY --from=build /app/generated ./generated
 
-# Copy Prisma schema + migrations (needed for prisma migrate deploy)
+# Copy pre-downloaded Prisma engines from the build stage. This is what
+# makes the prod image self-contained — no runtime download.
+COPY --from=build /app/node_modules/@prisma/engines ./node_modules/@prisma/engines
+COPY --from=build /app/node_modules/.pnpm/@prisma+engines* ./node_modules/.pnpm/
+
+# Copy Prisma schema + migrations (needed for `prisma migrate deploy`)
 COPY prisma ./prisma
 COPY prisma.config.ts ./
 
 # Copy Swagger docs if needed at runtime
 COPY swagger-docs.yaml ./
 
-# Create uploads directory with correct ownership
+# Create uploads directory with correct ownership.
+# (We only chown the writable directories — node_modules stays root-owned
+# and read-only, which is the secure default.)
 RUN mkdir -p uploads && chown nestjs:nodejs uploads
 
 # Switch to non-root user
