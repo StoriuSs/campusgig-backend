@@ -150,6 +150,12 @@ services:
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME}
       KC_HOSTNAME_STRICT: "true"
       KC_HTTP_PORT: 8080
+      # Serve plain HTTP inside the Docker network. Nginx terminates TLS
+      # on the host (campusgig.tech, api.campusgig.tech, auth.campusgig.tech)
+      # and forwards plain HTTP to this container. Without this flag,
+      # Keycloak refuses to start in production mode because it expects
+      # HTTPS certificates that we don't (and shouldn't) configure here.
+      KC_HTTP_ENABLED: "true"
       KC_PROXY_HEADERS: xforwarded     # Trust reverse proxy headers (nginx/traefik)
     # `start` without --optimized: Keycloak does its build step on first launch,
     # then starts. ~30s slower first boot than --optimized, but works directly
