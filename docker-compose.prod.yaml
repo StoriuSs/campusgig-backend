@@ -230,7 +230,14 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
+      # Grafana is accessed via SSH tunnel (ssh -L 3001:127.0.0.1:3001 ...),
+      # not via Nginx at a /grafana subpath. So it serves at root /.
+      # If you ever proxy this through Nginx at https://example.com/grafana/,
+      # re-add BOTH together — they're a pair:
+      #   - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
+      #   - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      # Setting only ROOT_URL (the previous config) caused 302s to /grafana/*
+      # that Grafana couldn't actually serve.
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
