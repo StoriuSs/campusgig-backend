@@ -24,6 +24,8 @@ export const KeycloakAdminProvider: Provider = {
         const maxRetries = 30
         const retryDelay = 5000 // 5 seconds
 
+        logger.log(`Connecting to Keycloak admin API at ${internalUrl}...`)
+
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 // Authenticate as admin
@@ -37,12 +39,16 @@ export const KeycloakAdminProvider: Provider = {
                 logger.log('Successfully authenticated with Keycloak Admin API')
                 break // Success! Break out of the loop
             } catch (error) {
+                const errMsg = (error as Error)?.message || String(error)
                 if (attempt === maxRetries) {
                     logger.error(`Failed to authenticate with Keycloak after ${maxRetries} attempts`, error)
                     throw error
                 }
+                // Surface the actual error reason so "not ready yet" isn't opaque.
+                // Common values: ECONNREFUSED (Keycloak not up), 401 (wrong creds),
+                // ENOTFOUND (wrong host), getaddrinfo (DNS).
                 logger.warn(
-                    `Keycloak not ready yet (attempt ${attempt}/${maxRetries}). Retrying in ${retryDelay / 1000}s...`
+                    `Keycloak auth failed (attempt ${attempt}/${maxRetries}): ${errMsg}. Retrying in ${retryDelay / 1000}s...`
                 )
                 await new Promise((resolve) => setTimeout(resolve, retryDelay))
             }
