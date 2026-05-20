@@ -137,6 +137,7 @@
     "node": ">=22.0.0",
     "npm": ">=9.0.0"
   },
+  "packageManager": "pnpm@10.29.2",
   "lint-staged": {
     "*.{ts,js}": [
       "eslint --fix",

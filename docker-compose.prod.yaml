@@ -280,7 +280,7 @@ services:
   # ── Node Exporter — Hardware and OS metrics ──
   node-exporter:
     container_name: campusgig-node-exporter-prod
-    image: prom/node-exporter:latest
+    image: prom/node-exporter:v1.8.2
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro

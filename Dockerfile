@@ -22,8 +22,12 @@ RUN apk add --no-cache \
     libc6-compat \
     openssl
 
-# Enable pnpm via corepack
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Enable pnpm via corepack. Version is pinned via `packageManager` in
+# package.json — corepack reads that file and activates the right pnpm
+# version automatically when you `corepack enable`. Keeping host (Windows
+# dev) and container (Alpine prod) on the same pnpm version prevents the
+# entire class of "build works locally but not in Docker" bugs.
+RUN corepack enable
 
 WORKDIR /app
 
@@ -32,7 +36,7 @@ WORKDIR /app
 FROM base AS deps
 
 # Copy package files first for layer caching
-COPY package.json pnpm-lock.yaml* .npmrc ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml .npmrc ./
 
 # Install ALL dependencies (need devDependencies for building).
 # --ignore-scripts is fine here because this stage only needs source code
@@ -97,25 +101,16 @@ RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 
 # Copy package files
-COPY package.json pnpm-lock.yaml* .npmrc ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml .npmrc ./
 
-# Install production dependencies, then explicitly approve build scripts for
-# the small set of packages that genuinely need them.
+# Install production dependencies ONLY.
 #
-# pnpm v9+ ignores ALL install scripts by default (a security-by-default
-# improvement over the old npm/yarn behavior). `pnpm approve-builds <pkg>...`
-# is the supported non-interactive way to whitelist specific packages —
-# everything else stays sandboxed. See docs/supply-chain-and-install-scripts.md.
-RUN pnpm install --prod --frozen-lockfile && \
-    pnpm approve-builds \
-        @nestjs/core \
-        @prisma/client \
-        @prisma/engines \
-        msgpackr-extract \
-        prisma \
-        sharp \
-        unrs-resolver && \
-    pnpm store prune
+# pnpm v9+ ignores install scripts by default. The list of packages
+# allowed to run scripts is committed in pnpm-workspace.yaml (under
+# `onlyBuiltDependencies`), and approval is committed in the same file
+# via `pnpm approve-builds <pkgs>` (run once on a dev machine).
+# See docs/supply-chain-and-install-scripts.md for details.
+RUN pnpm install --prod --frozen-lockfile && pnpm store prune
 
 # Copy compiled output from build stage
 COPY --from=build /app/dist ./dist
