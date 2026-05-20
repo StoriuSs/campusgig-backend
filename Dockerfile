@@ -99,23 +99,23 @@ RUN addgroup --system --gid 1001 nodejs && \
 # Copy package files
 COPY package.json pnpm-lock.yaml* .npmrc ./
 
-# Install production dependencies ONLY.
+# Install production dependencies, then explicitly approve build scripts for
+# the small set of packages that genuinely need them.
 #
 # pnpm v9+ ignores ALL install scripts by default (a security-by-default
-# improvement over the old npm/yarn behavior). The --allow-build flags below
-# permit scripts for the small set of packages that genuinely need them:
-# Prisma (downloads migration + query engines), sharp (downloads native image
-# bindings), msgpackr-extract / unrs-resolver (native bindings), @nestjs/core.
-# Everything else stays sandboxed. See docs/supply-chain-and-install-scripts.md.
-RUN pnpm install --prod --frozen-lockfile \
-    --allow-build=@nestjs/core \
-    --allow-build=@prisma/client \
-    --allow-build=@prisma/engines \
-    --allow-build=msgpackr-extract \
-    --allow-build=prisma \
-    --allow-build=sharp \
-    --allow-build=unrs-resolver \
-    && pnpm store prune
+# improvement over the old npm/yarn behavior). `pnpm approve-builds <pkg>...`
+# is the supported non-interactive way to whitelist specific packages —
+# everything else stays sandboxed. See docs/supply-chain-and-install-scripts.md.
+RUN pnpm install --prod --frozen-lockfile && \
+    pnpm approve-builds \
+        @nestjs/core \
+        @prisma/client \
+        @prisma/engines \
+        msgpackr-extract \
+        prisma \
+        sharp \
+        unrs-resolver && \
+    pnpm store prune
 
 # Copy compiled output from build stage
 COPY --from=build /app/dist ./dist
