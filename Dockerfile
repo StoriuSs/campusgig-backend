@@ -96,13 +96,15 @@ RUN addgroup --system --gid 1001 nodejs && \
 # Copy package files
 COPY package.json pnpm-lock.yaml* ./
 
-# Install production dependencies ONLY. We DO NOT use --ignore-scripts here
-# because Prisma's postinstall is what downloads the engine binaries into
-# node_modules. Skipping it means the prisma CLI (used by `migrate deploy`
-# in the CMD below) won't have its engines available.
+# Install production dependencies ONLY.
 #
-# Supply-chain risk note: we accept Prisma + adjacent packages running their
-# install scripts. This is the same trust we already give them at build time.
+# pnpm v9+ ignores ALL install scripts by default (a security-by-default
+# improvement over the old npm/yarn behavior). We rely on the
+# `pnpm.onlyBuiltDependencies` allowlist in package.json to permit scripts
+# for the small set of packages that genuinely need them: Prisma (downloads
+# migration + query engines), sharp (downloads native image bindings),
+# msgpackr-extract (native bindings), @prisma/client/engines, @nestjs/core.
+# Everything else stays sandboxed. See docs/supply-chain-and-install-scripts.md.
 RUN pnpm install --prod --frozen-lockfile && pnpm store prune
 
 # Copy compiled output from build stage
