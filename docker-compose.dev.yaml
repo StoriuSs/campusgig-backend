@@ -40,12 +40,9 @@ services:
       - /app/node_modules  # Prevent host node_modules from overriding container's
       - /app/generated     # Preserve generated Prisma client
     depends_on:
-      db:
-        condition: service_started
-      redis:
-        condition: service_started
-      keycloak:
-        condition: service_healthy
+      - db
+      - redis
+      - keycloak
     command: sh -c "pnpm approve-builds --all && pnpm exec prisma generate && pnpm run dev"
     networks:
       - backend
@@ -106,13 +103,6 @@ services:
     networks:
       - backend
     restart: unless-stopped
-    # See docker-compose.prod.yaml for rationale on the healthcheck shape.
-    healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET / HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q HTTP"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 90s
 
   # Prometheus - Metrics collection
   prometheus:

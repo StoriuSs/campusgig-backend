@@ -16,8 +16,12 @@ export const KeycloakAdminProvider: Provider = {
             realmName: 'master' // Admin authentication usually happens against the master realm. We'll set the target realm later.
         })
 
-        // Retry logic for Keycloak authentication since it takes a while to boot up
-        const maxRetries = 10
+        // Retry logic for Keycloak authentication since it takes a while to boot up.
+        // Cold-boot Keycloak on a small VPS can take 60-90s before it accepts admin
+        // requests. 30 × 5s = 150s gives us comfortable headroom. Without this, the
+        // app starts, races against Keycloak's startup, and gives up before Keycloak
+        // is ready — which then crashes the container into a restart loop.
+        const maxRetries = 30
         const retryDelay = 5000 // 5 seconds
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
