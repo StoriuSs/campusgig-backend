@@ -5,9 +5,15 @@
 #   FRONTEND_DOMAIN    e.g.  campusgig.example.com
 #   API_DOMAIN         e.g.  api.campusgig.example.com
 #   AUTH_DOMAIN        e.g.  auth.campusgig.example.com
-#   FRONTEND_PORT      host port the frontend container binds to (default 8080)
-#   API_PORT           host port the backend app binds to (default 3000)
-#   KEYCLOAK_PORT      host port keycloak binds to (e.g. 8090)
+#   FRONTEND_PORT      host port the frontend container binds to (default 8081)
+#   API_PORT           host port the backend app binds to    (default 3000)
+#   KEYCLOAK_PORT      host port keycloak binds to            (default 8080)
+#
+# Port topology rationale: Keycloak uses its conventional 8080 on both
+# container side and host side (KEYCLOAK_PORT=8080 in .env.production).
+# Frontend uses 8081 on the host to avoid collision. If you ever move
+# Keycloak to a non-default port, update both this file AND
+# .env.production (which the backend reads to construct its internal URL).
 #
 # After installing:
 #   1. sudo ln -s /etc/nginx/sites-available/campusgig /etc/nginx/sites-enabled/

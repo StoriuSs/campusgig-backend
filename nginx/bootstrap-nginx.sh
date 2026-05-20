@@ -26,12 +26,17 @@
 set -euo pipefail
 
 # ─── Defaults ────────────────────────────────────────────────────────────────
+# These defaults reflect the canonical host-port topology decided after the
+# initial deploy. If you change any of these, also update:
+#   - .env.production (FRONTEND_PORT for the frontend repo)
+#   - docker-compose.prod.yaml (the host-side port mapping for that service)
+# Frontend runs on 8081 (not 8080) so Keycloak can use its conventional 8080.
+FRONTEND_PORT="8081"
+API_PORT="3000"
+KEYCLOAK_PORT="8080"
 FRONTEND_DOMAIN=""
 API_DOMAIN=""
 AUTH_DOMAIN=""
-FRONTEND_PORT="8080"
-API_PORT="3000"
-KEYCLOAK_PORT="8090"
 EMAIL=""
 SKIP_CERTBOT=false
 TEMPLATE="$(dirname "$0")/campusgig.conf.template"
