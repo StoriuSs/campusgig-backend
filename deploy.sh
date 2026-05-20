@@ -100,7 +100,7 @@ if [[ "$SKIP_BUILD" == "true" ]]; then
 	warn "Skipping image build (--skip-build)"
 else
 	log "Building images (no-cache, parallel)…"
-	docker compose -f "$COMPOSE_FILE" build --pull --parallel app \
+	docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build --pull --parallel app \
 		|| die "Image build failed"
 	ok "Images built"
 fi
@@ -112,7 +112,7 @@ if [[ "$SKIP_MIGRATE" == "true" ]]; then
 	warn "Skipping migrations (--skip-migrate)"
 else
 	log "Ensuring database is up before running migrations…"
-	docker compose -f "$COMPOSE_FILE" up -d db
+	docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d db
 	# Wait for db healthcheck
 	for i in $(seq 1 30); do
 		status=$(docker inspect --format='{{.State.Health.Status}}' campusgig-db-prod 2>/dev/null || echo "missing")
@@ -122,7 +122,7 @@ else
 	[[ "$status" == "healthy" ]] || die "Database did not become healthy in 60s"
 
 	log "Running Prisma migrations…"
-	docker compose -f "$COMPOSE_FILE" run --rm \
+	docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" run --rm \
 		--no-deps \
 		--entrypoint "" \
 		app \
@@ -133,7 +133,7 @@ fi
 
 # ─── Bring up all services ───────────────────────────────────────────────────
 log "Bringing up services (detached, remove orphans)…"
-docker compose -f "$COMPOSE_FILE" up -d --remove-orphans \
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans \
 	|| die "docker compose up failed"
 ok "docker compose up complete"
 
@@ -156,7 +156,7 @@ for container in "${SERVICES_TO_HEALTHCHECK[@]}"; do
 				;;
 			unhealthy|exited|dead|restarting)
 				warn "${container} is ${status} — dumping last 50 lines of logs:"
-				docker compose -f "$COMPOSE_FILE" logs --tail=50 "${container#campusgig-}" 2>/dev/null \
+				docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" logs --tail=50 "${container#campusgig-}" 2>/dev/null \
 					|| docker logs --tail=50 "$container" 2>/dev/null \
 					|| true
 				die "Deployment failed: ${container} is ${status}"
