@@ -8,6 +8,12 @@ const isDevelopment = process.env.NODE_ENV !== 'production'
 const lokiEnabled = process.env.LOKI_ENABLED !== 'false' && process.env.LOKI_HOST
 
 // Build transport targets
+//
+// Logging policy: ALWAYS write to stdout, regardless of environment. Optionally
+// also ship to Loki when LOKI_HOST is set. The stdout copy is what `docker logs`
+// reads — without it, container-level debugging when Loki is unreachable is
+// impossible. Pretty-printing only in dev (human-readable); prod gets raw JSON
+// so log aggregators (Loki, journald, Promtail) can parse fields.
 const buildTransports = () => {
     const targets: Array<{
         target: string
@@ -15,7 +21,10 @@ const buildTransports = () => {
         level?: string
     }> = []
 
-    // Console output (pino-pretty in dev, JSON in prod)
+    // Console output — pino-pretty (human-readable) in dev, pino/file → stdout
+    // (JSON) in prod. We use `pino/file` with destination 1 (the file descriptor
+    // for stdout) instead of just omitting a transport, because the multi-target
+    // `targets` array requires every line to be a transport target.
     if (isDevelopment) {
         targets.push({
             target: 'pino-pretty',
@@ -26,9 +35,16 @@ const buildTransports = () => {
                 ignore: 'pid,hostname,req.id,req.headers,req.remoteAddress,req.remotePort,res.headers'
             }
         })
+    } else {
+        targets.push({
+            target: 'pino/file',
+            options: { destination: 1 } // 1 = stdout file descriptor
+        })
     }
 
-    // Loki transport (sends logs to Grafana Loki)
+    // Loki transport (sends logs to Grafana Loki). Additive — doesn't replace
+    // the stdout target above. If Loki is unreachable the app continues
+    // logging to stdout normally.
     if (lokiEnabled) {
         targets.push({
             target: 'pino-loki',
