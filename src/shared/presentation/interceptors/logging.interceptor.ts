@@ -3,7 +3,7 @@ import { Observable } from 'rxjs'
 import { tap } from 'rxjs/operators'
 import { Logger } from 'nestjs-pino'
 import { ExtendedRequest } from '@/shared/types'
-import { isMetricsRequest } from '@/shared/utils'
+import { isMetricsRequest, isHealthCheckRequest } from '@/shared/utils'
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
@@ -31,6 +31,18 @@ export class LoggingInterceptor implements NestInterceptor {
                     const response = ctx.getResponse()
                     const duration = Date.now() - startTime
                     const statusCode = response.statusCode
+
+                    // Skip logging successful healthcheck responses. Docker
+                    // probes /health/live every 30s — that's ~3000 lines/day
+                    // per service of pure noise. Failed healthchecks still
+                    // produce a log line via the global exception filter,
+                    // which logs every exception (including the ServiceUnavailable
+                    // thrown by @nestjs/terminus when a dependency check fails).
+                    // So we keep the "is health degraded?" signal without
+                    // the steady-state noise.
+                    if (isHealthCheckRequest(url) && statusCode < 400) {
+                        return
+                    }
 
                     // Structured logging for successful responses
                     this.logger.log(

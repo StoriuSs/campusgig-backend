@@ -3,7 +3,7 @@ import { Observable } from 'rxjs'
 import { tap, catchError } from 'rxjs/operators'
 import { throwError } from 'rxjs'
 import { MetricsService } from '@/shared/infrastructure'
-import { isMetricsRequest } from '@/shared/utils'
+import { isMetricsRequest, isHealthCheckRequest } from '@/shared/utils'
 
 @Injectable()
 export class MetricsInterceptor implements NestInterceptor {
@@ -14,6 +14,16 @@ export class MetricsInterceptor implements NestInterceptor {
 
         // Skip metrics for /metrics endpoint (Prometheus scraping)
         if (isMetricsRequest(request.url)) {
+            return next.handle()
+        }
+
+        // Skip metrics for healthcheck endpoints. Docker probes /health/live
+        // every 30s; recording it would inflate the 2xx counter, pull median
+        // latency toward the trivial healthcheck handler, and make error
+        // rate appear artificially close to 0%. Healthcheck status is
+        // already observable via `docker inspect ... .State.Health.Status`,
+        // so we don't lose any operational signal by filtering here.
+        if (isHealthCheckRequest(request.url)) {
             return next.handle()
         }
 
