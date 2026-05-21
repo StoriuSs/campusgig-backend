@@ -1,8 +1,14 @@
 import { Injectable, Inject } from '@nestjs/common'
-import { IStorageService, UploadedFile, UploadOptions, STORAGE_SERVICE } from './interfaces/storage.interface'
+import {
+    IStorageService,
+    UploadedFile,
+    UploadOptions,
+    SignedUrlOptions,
+    STORAGE_SERVICE
+} from './interfaces/storage.interface'
 import { ImageProcessingService } from './services/image-processing.service'
 
-export { UploadedFile, UploadOptions } from './interfaces/storage.interface'
+export { UploadedFile, UploadOptions, SignedUrlOptions } from './interfaces/storage.interface'
 
 const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'image/gif']
 
@@ -99,6 +105,15 @@ export class UploadService {
      */
     getPublicUrl(filePath: string): string {
         return this.storageService.getPublicUrl(filePath)
+    }
+
+    /**
+     * Get a time-limited signed URL for reading a private file. See
+     * IStorageService.getSignedReadUrl for full semantics. Use this for
+     * any object stored in a private bucket; raw S3 URLs return 403.
+     */
+    async getSignedReadUrl(filePath: string, options?: SignedUrlOptions): Promise<string> {
+        return this.storageService.getSignedReadUrl(filePath, options)
     }
 
     /**

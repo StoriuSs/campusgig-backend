@@ -12,6 +12,16 @@ export interface UploadedFileResult {
     height?: number
 }
 
+export interface SignedReadUrlOptions {
+    /** Seconds the URL stays valid. Default: 3600 (1 hour). S3 v4 max: 7 days. */
+    expiresIn?: number
+    /**
+     * Override Content-Disposition on the response (e.g.
+     * `attachment; filename="x.pdf"`) to force download. Optional.
+     */
+    responseContentDisposition?: string
+}
+
 export interface StoragePort {
     /**
      * Upload an avatar image. Handles processing (resize, format conversion) internally.
@@ -25,8 +35,16 @@ export interface StoragePort {
 
     /**
      * Get the public URL path for a stored file (relative to base URL).
+     * Only safe for public objects. Use `getSignedReadUrl` for private ones.
      */
     getPublicUrl(key: string): string
+
+    /**
+     * Get a time-limited signed URL for reading a private object.
+     * Resolves to the same path `getPublicUrl` would for local storage
+     * (dev only). For S3, returns a presigned URL with v4 signature.
+     */
+    getSignedReadUrl(key: string, options?: SignedReadUrlOptions): Promise<string>
 }
 
 export const STORAGE_PORT = Symbol('StoragePort')

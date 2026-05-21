@@ -7,11 +7,12 @@ import {
     GetObjectCommand,
     HeadObjectCommand
 } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { v4 as uuidv4 } from 'uuid'
 import { CustomException } from '@/shared/presentation/exceptions'
 import { ERROR_CODES, ERROR_TYPES } from '@/shared/constants'
 import { MESSAGES } from '@/shared/constants'
-import { IStorageService, UploadedFile, UploadOptions } from '../interfaces/storage.interface'
+import { IStorageService, UploadedFile, UploadOptions, SignedUrlOptions } from '../interfaces/storage.interface'
 
 @Injectable()
 export class S3StorageService implements IStorageService {
@@ -244,9 +245,39 @@ export class S3StorageService implements IStorageService {
     }
 
     /**
-     * Generate the public URL for a file
+     * Generate the public URL for a file.
+     *
+     * NOTE: this URL only works if the bucket policy grants `s3:GetObject`
+     * to anonymous requests. For private buckets (the secure default and
+     * what CampusGig uses), prefer `getSignedReadUrl`.
      */
     getPublicUrl(s3Key: string): string {
         return `https://${this.bucket}.s3.${this.region}.amazonaws.com/${this.extractS3Key(s3Key)}`
+    }
+
+    /**
+     * Generate a time-limited signed URL for reading a private S3 object.
+     *
+     * The signature is pure local crypto — no API call to S3 — so this is
+     * cheap to call inline on every response (e.g. embedding avatar URLs
+     * in /users/me).
+     *
+     * Default TTL is 1 hour. AWS v4 signatures cap at 7 days.
+     *
+     * `responseContentDisposition` forces the browser to download instead
+     * of inline-render, e.g. `attachment; filename="delivery.zip"`. The
+     * S3 object's stored metadata is unchanged; the disposition only
+     * applies to responses fetched via this exact signed URL.
+     */
+    async getSignedReadUrl(filePath: string, options?: SignedUrlOptions): Promise<string> {
+        const s3Key = this.extractS3Key(filePath)
+        const command = new GetObjectCommand({
+            Bucket: this.bucket,
+            Key: s3Key,
+            ResponseContentDisposition: options?.responseContentDisposition
+        })
+        return getSignedUrl(this.s3Client, command, {
+            expiresIn: options?.expiresIn ?? 3600
+        })
     }
 }

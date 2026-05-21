@@ -61,17 +61,13 @@ export class UsersController {
     @Get('me')
     @HttpCode(HttpStatus.OK)
     async getProfile(@CurrentUser() user: AuthenticatedKeycloakUser): Promise<ServiceResponse<UserProfileResponseDto>> {
+        const avatarUrl = await this.resolveAvatarUrl(user.local.avatarUrl)
         const profile = validateAndTransform(UserProfileResponseDto, {
             id: user.id,
             email: user.email,
             username: user.local.username ?? user.username,
             displayName: user.local.displayName ?? user.name,
-            avatarUrl: user.local.avatarUrl
-                ? getFullUrl(
-                      this.storage.getPublicUrl(user.local.avatarUrl),
-                      this.configService.get<string>('app.baseUrl')
-                  )
-                : null,
+            avatarUrl,
             emailVerified: user.emailVerified,
             roles: user.roles,
             bio: user.local.bio,
@@ -127,12 +123,11 @@ export class UsersController {
             new UpdateProfileCommand(user.local.dbId, dto.displayName, dto.bio)
         )
 
+        const avatarUrl = await this.resolveAvatarUrl(result.avatarUrl)
         const responseData = validateAndTransform(UpdateProfileResponseDto, {
             username: result.username,
             displayName: result.displayName,
-            avatarUrl: result.avatarUrl
-                ? getFullUrl(this.storage.getPublicUrl(result.avatarUrl), this.configService.get<string>('app.baseUrl'))
-                : null,
+            avatarUrl,
             bio: result.bio,
             hasSetUsername: result.hasSetUsername
         })
@@ -166,11 +161,9 @@ export class UsersController {
             new UploadAvatarCommand(user.local.dbId, file.buffer, file.originalname)
         )
 
+        const avatarUrl = await this.resolveAvatarUrl(result.upload.key)
         const responseData = validateAndTransform(UploadAvatarResponseDto, {
-            avatarUrl: getFullUrl(
-                this.storage.getPublicUrl(result.upload.key),
-                this.configService.get<string>('app.baseUrl')
-            ),
+            avatarUrl,
             width: result.upload.width,
             height: result.upload.height,
             uploadedAt: new Date().toISOString()
@@ -196,5 +189,32 @@ export class UsersController {
             MESSAGES.USER.ACCOUNT_DELETED,
             null
         )
+    }
+
+    /**
+     * Resolve a stored avatar key (e.g. `avatars/avatar-abc.webp`) into a
+     * URL the browser can actually fetch.
+     *
+     * For S3 in any environment with a private bucket (which is the
+     * default and what prod uses), this is a presigned GET URL with a 1
+     * hour TTL — the URL changes every time `/users/me` is hit, but the
+     * underlying object key in the DB stays stable.
+     *
+     * For local storage (dev), `getSignedReadUrl` is a no-op that returns
+     * the same `uploads/...` path `getPublicUrl` would. The local nginx
+     * serves the file directly. We still pipe through `getFullUrl` so
+     * absolute URLs come out correctly for the frontend's <img src>.
+     *
+     * Returns null if the user has no avatar set.
+     */
+    private async resolveAvatarUrl(avatarKey: string | null | undefined): Promise<string | null> {
+        if (!avatarKey) return null
+        const url = await this.storage.getSignedReadUrl(avatarKey)
+        // For S3, presigned URLs are already absolute (https://...).
+        // For local storage, the result is a relative path like
+        // `uploads/avatars/x.webp`, which getFullUrl turns into an
+        // absolute URL using app.baseUrl. getFullUrl is a no-op on URLs
+        // that already start with a scheme.
+        return getFullUrl(url, this.configService.get<string>('app.baseUrl'))
     }
 }

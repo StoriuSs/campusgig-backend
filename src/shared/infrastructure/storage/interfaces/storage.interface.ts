@@ -27,13 +27,36 @@ export interface UploadOptions {
     imageProcessing?: ImageProcessingOptions
 }
 
+export interface SignedUrlOptions {
+    /** Seconds the URL stays valid. Default: 3600 (1 hour). S3 v4 max is 7 days. */
+    expiresIn?: number
+    /**
+     * Override the Content-Disposition header on the response — e.g.
+     * `attachment; filename="delivery.zip"` to trigger a Save As dialog.
+     * Without this, the browser inlines the object based on Content-Type.
+     */
+    responseContentDisposition?: string
+}
+
 export interface IStorageService {
     uploadFile(file: Express.Multer.File, options?: UploadOptions): Promise<UploadedFile>
     uploadBuffer(buffer: Buffer, filename: string, mimetype: string, options?: UploadOptions): Promise<UploadedFile>
     deleteFile(filePath: string): Promise<void>
     getFile(filePath: string): Promise<Buffer>
     fileExists(filePath: string): Promise<boolean>
+    /**
+     * Returns the raw, unsigned URL for a stored object. Only useful when
+     * the bucket (or local upload directory) is public-read. For private
+     * buckets, callers should prefer `getSignedReadUrl` instead.
+     */
     getPublicUrl(filePath: string): string
+    /**
+     * Returns a time-limited URL that grants GET access to a private
+     * object. For S3 this is a presigned URL with v4 signature query
+     * params. For local storage this is just the same path `getPublicUrl`
+     * returns — local files are dev-only and the local nginx serves them.
+     */
+    getSignedReadUrl(filePath: string, options?: SignedUrlOptions): Promise<string>
 }
 
 export const STORAGE_SERVICE = 'STORAGE_SERVICE'

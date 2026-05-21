@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { UploadService } from '@/shared/infrastructure/storage/upload.service'
-import { StoragePort, UploadedFileResult } from '@/modules/users/application'
+import { StoragePort, UploadedFileResult, SignedReadUrlOptions } from '@/modules/users/application'
 
 /**
  * Upload Storage Adapter — Outbound Adapter
@@ -37,5 +37,9 @@ export class UploadStorageAdapter implements StoragePort {
 
     getPublicUrl(key: string): string {
         return this.uploadService.getPublicUrl(key)
+    }
+
+    async getSignedReadUrl(key: string, options?: SignedReadUrlOptions): Promise<string> {
+        return this.uploadService.getSignedReadUrl(key, options)
     }
 }

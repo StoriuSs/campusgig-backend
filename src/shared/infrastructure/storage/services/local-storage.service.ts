@@ -200,4 +200,16 @@ export class LocalStorageService implements IStorageService {
         const key = filePath.includes('uploads/') ? filePath.split('uploads/')[1] : filePath
         return `uploads/${key}`
     }
+
+    /**
+     * Local storage has no concept of signed URLs — files are served by
+     * the local nginx (or NestJS static handler) at /uploads/*. Returning
+     * the same path `getPublicUrl` would return keeps the StoragePort
+     * interface uniform and lets the controller treat local and S3 the
+     * same. The `expiresIn` and `responseContentDisposition` options are
+     * intentionally ignored in dev.
+     */
+    async getSignedReadUrl(filePath: string): Promise<string> {
+        return this.getPublicUrl(filePath)
+    }
 }
