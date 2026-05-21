@@ -43,7 +43,25 @@ services:
       - db
       - redis
       - keycloak
-    command: sh -c "pnpm approve-builds --all && pnpm exec prisma generate && pnpm run dev"
+    # First-start reconciliation:
+    #
+    # The anonymous /app/node_modules volume preserves the deps installed
+    # by the Dockerfile across restarts, but on a FRESH volume (first up,
+    # after `docker compose down -v`, or after switching pnpm versions),
+    # its .modules.yaml can drift from what the source tree expects — e.g.
+    # when the host has been touched by a different pnpm version, or new
+    # devDependencies were added without rebuilding the image.
+    #
+    # `pnpm install --prefer-offline` reconciles the volume against the
+    # current lockfile cheaply (uses the pnpm store on disk, only fetches
+    # what's actually missing). It also runs install scripts for packages
+    # whitelisted in pnpm-workspace.yaml's `onlyBuiltDependencies`, which
+    # materializes Prisma engines + sharp's native bindings.
+    #
+    # NOTE: the older `pnpm approve-builds --all` form was wrong — that
+    # flag never existed. `approve-builds` is interactive; approval is
+    # already encoded in pnpm-workspace.yaml's `onlyBuiltDependencies`.
+    command: sh -c "pnpm install --prefer-offline && pnpm exec prisma generate && pnpm run dev"
     networks:
       - backend
     restart: unless-stopped

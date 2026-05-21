@@ -40,8 +40,11 @@ COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml .npmrc ./
 
 # Install ALL dependencies (need devDependencies for building).
 # --ignore-scripts is fine here because this stage only needs source code
-# to compile, not native bindings. The prod stage installs separately
-# with --allow-build flags for the packages that actually need scripts.
+# to compile, not native bindings. The dev compose runs `pnpm rebuild` at
+# container start to materialize the native bindings (sharp, prisma engines,
+# etc.) for whitelisted packages in pnpm-workspace.yaml's
+# `onlyBuiltDependencies`. The prod stage runs scripts during its own
+# install (no --ignore-scripts there).
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # ----- STAGE 3: BUILD -----
