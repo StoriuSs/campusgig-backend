@@ -48,6 +48,14 @@ coverage/
 *.tmp
 *.temp
 
+# Database dumps — pg_dump output from "Refreshing local dev from prod"
+# (see docs/vps-operator-cheatsheet.md). These contain real prod user data
+# and MUST NEVER be committed. The negation re-allows Prisma migration .sql
+# files since those are part of the schema history.
+*.sql
+*.dump
+!prisma/migrations/**/*.sql
+
 # Agents
 .agents
 
