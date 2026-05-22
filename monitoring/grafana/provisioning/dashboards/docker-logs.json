@@ -53,7 +53,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({container=~\".+\"} [$__range]))",
+          "expr": "sum(count_over_time({container=~\".+\", container!~\"campusgig-(loki|promtail)-prod\"} [$__range]))",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -107,7 +107,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({container=~\".+\"} |~ \"(?i)error\" [$__range]))",
+          "expr": "sum(count_over_time({container=~\".+\", container!~\"campusgig-(loki|promtail)-prod\"} |~ \"(?i)error\" [$__range]))",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -161,7 +161,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "sum(count_over_time({container=~\".+\"} |~ \"(?i)warn\" [$__range]))",
+          "expr": "sum(count_over_time({container=~\".+\", container!~\"campusgig-(loki|promtail)-prod\"} |~ \"(?i)warn\" [$__range]))",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
@@ -199,7 +199,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{container=~\".+\"}",
+          "expr": "{container=~\".+\", container!~\"campusgig-(loki|promtail)-prod\"}",
           "refId": "A"
         }
       ],
