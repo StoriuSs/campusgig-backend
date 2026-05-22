@@ -15,25 +15,34 @@ scrape_configs:
       - host: unix:///var/run/docker.sock
         refresh_interval: 5s
     relabel_configs:
-      # Only collect logs from containers with specific names
+      # Only collect logs from CampusGig containers. The container naming
+      # convention is `campusgig-<service>-<env>` (e.g. `campusgig-app-prod`,
+      # `campusgig-db-prod`). The leading `/` in `__meta_docker_container_name`
+      # is how Docker reports container names — that's not a typo.
+      #
+      # We include `app` here because Pino writes to stdout in prod (see
+      # docs/logging.md), and we want the Promtail path as a redundancy
+      # backup against pino-loki transport failures.
       - source_labels: ['__meta_docker_container_name']
-        regex: '/(postgres|redis|keycloak|prometheus|grafana|loki|promtail)-hexagonal'
+        regex: '/campusgig-(app|db|redis|keycloak|prometheus|grafana|loki|promtail|node-exporter)-prod'
         action: keep
-      
-      # Extract container name as a label
+
+      # Extract container name as a label (strip the leading slash)
       - source_labels: ['__meta_docker_container_name']
         target_label: 'container'
         regex: '/(.+)'
         replacement: '$1'
-      
+
       # Extract image name
       - source_labels: ['__meta_docker_container_image']
         target_label: 'image'
-      
-      # Add service label based on container name
+
+      # Extract the middle segment of `campusgig-<service>-prod` as the
+      # `service` label (e.g. `app`, `db`, `keycloak`). Useful for grouping
+      # in Grafana without having to wildcard-match container names.
       - source_labels: ['__meta_docker_container_name']
         target_label: 'service'
-        regex: '/([^-]+)-.*'
+        regex: '/campusgig-([^-]+)-prod'
         replacement: '$1'
 
   # Scrape NestJS application logs (if logging to file)
