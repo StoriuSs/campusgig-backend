@@ -23,12 +23,79 @@
 #      ↑ certbot edits this file in place to add 443 server blocks + cert paths.
 # ============================================================================
 
+# ─── Cloudflare real-IP handling ────────────────────────────────────────────
+# When the Cloudflare orange-cloud proxy is enabled for a DNS record,
+# requests arrive at this server FROM Cloudflare's edge IPs, not directly
+# from end users. Without configuration, `$remote_addr` would show
+# Cloudflare's IP — useless for logging, audit trails, rate limiting,
+# ban-by-IP features.
+#
+# The `set_real_ip_from` lines below tell Nginx "trust these IP ranges to
+# tell us the real client IP via the CF-Connecting-IP header." Combined
+# with `real_ip_header CF-Connecting-IP`, Nginx rewrites $remote_addr to
+# the actual end-user IP before any logging or proxying happens.
+#
+# SAFETY: the rewrite ONLY happens for connections originating from these
+# ranges. Random attackers on the public internet can't fake their IP by
+# sending CF-Connecting-IP — Nginx sees their source IP isn't in the
+# trusted list and ignores the header.
+#
+# COMPATIBILITY WITH GREY-CLOUD (DNS-only) MODE: this block is a no-op
+# until you flip a record to orange. With grey-cloud, traffic comes
+# directly from the user, $remote_addr is already correct, and there's
+# no CF-Connecting-IP header to rewrite from. Safe to leave configured.
+#
+# REFRESHING THE IP LIST: Cloudflare publishes their current ranges at
+# https://www.cloudflare.com/ips-v4 and https://www.cloudflare.com/ips-v6
+# Changes are rare (every year or two). To check for drift:
+#   curl https://www.cloudflare.com/ips-v4
+#   curl https://www.cloudflare.com/ips-v6
+# If the lists differ from below, update this file and reload Nginx.
+# (Last refreshed: 2026-05-22 — Cloudflare's ranges are stable; rarely
+# changes outside major datacenter additions.)
+
+# Cloudflare IPv4 ranges
+set_real_ip_from 173.245.48.0/20;
+set_real_ip_from 103.21.244.0/22;
+set_real_ip_from 103.22.200.0/22;
+set_real_ip_from 103.31.4.0/22;
+set_real_ip_from 141.101.64.0/18;
+set_real_ip_from 108.162.192.0/18;
+set_real_ip_from 190.93.240.0/20;
+set_real_ip_from 188.114.96.0/20;
+set_real_ip_from 197.234.240.0/22;
+set_real_ip_from 198.41.128.0/17;
+set_real_ip_from 162.158.0.0/15;
+set_real_ip_from 104.16.0.0/13;
+set_real_ip_from 104.24.0.0/14;
+set_real_ip_from 172.64.0.0/13;
+set_real_ip_from 131.0.72.0/22;
+
+# Cloudflare IPv6 ranges
+set_real_ip_from 2400:cb00::/32;
+set_real_ip_from 2606:4700::/32;
+set_real_ip_from 2803:f800::/32;
+set_real_ip_from 2405:b500::/32;
+set_real_ip_from 2405:8100::/32;
+set_real_ip_from 2a06:98c0::/29;
+set_real_ip_from 2c0f:f248::/32;
+
+# Use Cloudflare's CF-Connecting-IP header as the source of truth for
+# the real client IP. `real_ip_recursive on` makes Nginx walk back
+# through any X-Forwarded-For chain too, so even if multiple proxies
+# are stacked the real client IP wins.
+real_ip_header CF-Connecting-IP;
+real_ip_recursive on;
+
 # ─── Shared limits ──────────────────────────────────────────────────────────
 client_max_body_size 25M;        # match backend upload limit
 proxy_read_timeout 60s;
 proxy_send_timeout 60s;
 
 # ─── Common proxy headers (used by all upstreams) ───────────────────────────
+# Note: $remote_addr below is the REAL client IP, because the real-IP
+# block above already rewrote it for Cloudflare-originated requests.
+# Downstream apps (NestJS, Keycloak) see the actual end-user IP.
 proxy_set_header Host              $host;
 proxy_set_header X-Real-IP         $remote_addr;
 proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
