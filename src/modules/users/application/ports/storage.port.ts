@@ -29,6 +29,12 @@ export interface StoragePort {
     uploadAvatar(file: Buffer, originalName: string, userId: string): Promise<UploadedFileResult>
 
     /**
+     * Upload a portfolio image. Handles processing (resize to max 1600×1200,
+     * WebP conversion, EXIF strip) internally. Same shape as uploadAvatar.
+     */
+    uploadPortfolioItem(file: Buffer, originalName: string, userId: string): Promise<UploadedFileResult>
+
+    /**
      * Delete a file by its relative key.
      */
     deleteFile(filePath: string): Promise<void>

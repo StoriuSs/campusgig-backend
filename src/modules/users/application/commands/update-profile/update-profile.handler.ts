@@ -16,6 +16,9 @@ export class UpdateProfileHandler implements ICommandHandler<UpdateProfileComman
         const updateData: Partial<UserEntity> = {}
         if (command.displayName !== undefined) updateData.displayName = command.displayName
         if (command.bio !== undefined) updateData.bio = command.bio
+        if (command.location !== undefined) updateData.location = command.location
+        if (command.roleLine !== undefined) updateData.roleLine = command.roleLine
+        if (command.languages !== undefined) updateData.languages = command.languages
 
         // UsernameTakenException is thrown by the repository if unique constraint fails
         const user = await this.userRepo.update(command.userId, updateData)

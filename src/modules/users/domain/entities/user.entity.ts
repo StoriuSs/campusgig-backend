@@ -16,6 +16,16 @@ export class UserEntity {
     bio: string | null
     hasSetUsername: boolean
 
+    // Profile fields (Feature 02)
+    location: string | null
+    roleLine: string | null
+    languages: string | null
+
+    // Endorsed-badge fields. endorsedAt !== null means "user is endorsed."
+    // We never store an explicit "not endorsed" state per CLAUDE.md.
+    endorsedAt: Date | null
+    endorsedBy: string | null
+
     readonly createdAt: Date
     updatedAt: Date
     deletedAt: Date | null
@@ -30,6 +40,11 @@ export class UserEntity {
         avatarUrl?: string | null
         bio?: string | null
         hasSetUsername?: boolean
+        location?: string | null
+        roleLine?: string | null
+        languages?: string | null
+        endorsedAt?: Date | null
+        endorsedBy?: string | null
         createdAt?: Date
         updatedAt?: Date
         deletedAt?: Date | null
@@ -43,6 +58,11 @@ export class UserEntity {
         this.avatarUrl = props.avatarUrl ?? null
         this.bio = props.bio ?? null
         this.hasSetUsername = props.hasSetUsername ?? false
+        this.location = props.location ?? null
+        this.roleLine = props.roleLine ?? null
+        this.languages = props.languages ?? null
+        this.endorsedAt = props.endorsedAt ?? null
+        this.endorsedBy = props.endorsedBy ?? null
         this.createdAt = props.createdAt ?? new Date()
         this.updatedAt = props.updatedAt ?? new Date()
         this.deletedAt = props.deletedAt ?? null
@@ -51,5 +71,9 @@ export class UserEntity {
 
     get isDeleted(): boolean {
         return this.deletedAt !== null
+    }
+
+    get isEndorsed(): boolean {
+        return this.endorsedAt !== null
     }
 }

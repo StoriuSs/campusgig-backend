@@ -112,6 +112,22 @@ export class ImageProcessingService {
     }
 
     /**
+     * Process portfolio image: resize to max 1600×1200, convert to WebP.
+     * Used by Feature 02 portfolio uploads. Frontend's crop modal pre-crops
+     * to 4:3, so this rarely needs to resize — just normalizes format and
+     * strips EXIF for privacy.
+     */
+    async processPortfolioImage(input: Buffer): Promise<ProcessedImage> {
+        return this.processImage(input, {
+            convertToWebp: true,
+            quality: 85,
+            stripMetadata: true,
+            maxWidth: 1600,
+            maxHeight: 1200
+        })
+    }
+
+    /**
      * Validate if buffer is a valid image
      */
     async isValidImage(input: Buffer): Promise<boolean> {

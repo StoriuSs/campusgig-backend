@@ -1,5 +1,5 @@
-import { UserEntity } from '@/modules/users/domain'
-import { User } from '@/generated/prisma/client'
+import { UserEntity, UserSkillEntity, PortfolioItemEntity } from '@/modules/users/domain'
+import { User, UserSkill, PortfolioItem } from '@/generated/prisma/client'
 
 /**
  * User Mapper
@@ -21,6 +21,11 @@ export class UserMapper {
             avatarUrl: prismaUser.avatarUrl,
             bio: prismaUser.bio,
             hasSetUsername: prismaUser.hasSetUsername,
+            location: prismaUser.location,
+            roleLine: prismaUser.roleLine,
+            languages: prismaUser.languages,
+            endorsedAt: prismaUser.endorsedAt,
+            endorsedBy: prismaUser.endorsedBy,
             createdAt: prismaUser.createdAt,
             updatedAt: prismaUser.updatedAt,
             deletedAt: prismaUser.deletedAt,
@@ -41,9 +46,47 @@ export class UserMapper {
         if (entity.avatarUrl !== undefined) data.avatarUrl = entity.avatarUrl
         if (entity.bio !== undefined) data.bio = entity.bio
         if (entity.hasSetUsername !== undefined) data.hasSetUsername = entity.hasSetUsername
+        if (entity.location !== undefined) data.location = entity.location
+        if (entity.roleLine !== undefined) data.roleLine = entity.roleLine
+        if (entity.languages !== undefined) data.languages = entity.languages
+        if (entity.endorsedAt !== undefined) data.endorsedAt = entity.endorsedAt
+        if (entity.endorsedBy !== undefined) data.endorsedBy = entity.endorsedBy
         if (entity.deletedAt !== undefined) data.deletedAt = entity.deletedAt
         if (entity.deletedBy !== undefined) data.deletedBy = entity.deletedBy
 
         return data as Partial<User>
+    }
+}
+
+/**
+ * UserSkill Mapper — owned by user.mapper.ts because UserSkill is a value
+ * object of the User aggregate (not its own aggregate root).
+ */
+export class UserSkillMapper {
+    static toDomain(row: UserSkill): UserSkillEntity {
+        return new UserSkillEntity({
+            id: row.id,
+            userId: row.userId,
+            name: row.name,
+            position: row.position,
+            createdAt: row.createdAt
+        })
+    }
+}
+
+/**
+ * PortfolioItem Mapper — owned by user.mapper.ts for the same reason.
+ */
+export class PortfolioItemMapper {
+    static toDomain(row: PortfolioItem): PortfolioItemEntity {
+        return new PortfolioItemEntity({
+            id: row.id,
+            userId: row.userId,
+            imageKey: row.imageKey,
+            width: row.width,
+            height: row.height,
+            position: row.position,
+            createdAt: row.createdAt
+        })
     }
 }

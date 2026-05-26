@@ -9,7 +9,11 @@ import {
     UserNotFoundException,
     UsernameTakenException,
     UsernameAlreadySetException,
-    AvatarRequiredException
+    AvatarRequiredException,
+    MaxSkillsReachedException,
+    SkillNotFoundException,
+    MaxPortfolioItemsReachedException,
+    PortfolioItemNotFoundException
 } from '@/modules/users/domain'
 
 /**
@@ -21,7 +25,16 @@ import {
  * The domain and application layers throw pure domain errors.
  * This filter translates them into proper HTTP responses.
  */
-@Catch(UserNotFoundException, UsernameTakenException, UsernameAlreadySetException, AvatarRequiredException)
+@Catch(
+    UserNotFoundException,
+    UsernameTakenException,
+    UsernameAlreadySetException,
+    AvatarRequiredException,
+    MaxSkillsReachedException,
+    SkillNotFoundException,
+    MaxPortfolioItemsReachedException,
+    PortfolioItemNotFoundException
+)
 export class UsersDomainExceptionFilter implements ExceptionFilter {
     constructor(private readonly logger: PinoLogger) {}
 
@@ -105,6 +118,42 @@ export class UsersDomainExceptionFilter implements ExceptionFilter {
                 status: HttpStatus.BAD_REQUEST,
                 code: ERROR_CODES.USER_VALIDATION,
                 type: ERROR_TYPES.USER_VALIDATION,
+                message: exception.message
+            }
+        }
+
+        if (exception instanceof MaxSkillsReachedException) {
+            return {
+                status: HttpStatus.CONFLICT,
+                code: ERROR_CODES.USER_MAX_SKILLS_REACHED,
+                type: ERROR_TYPES.USER_MAX_SKILLS_REACHED,
+                message: exception.message
+            }
+        }
+
+        if (exception instanceof SkillNotFoundException) {
+            return {
+                status: HttpStatus.NOT_FOUND,
+                code: ERROR_CODES.USER_SKILL_NOT_FOUND,
+                type: ERROR_TYPES.USER_SKILL_NOT_FOUND,
+                message: exception.message
+            }
+        }
+
+        if (exception instanceof MaxPortfolioItemsReachedException) {
+            return {
+                status: HttpStatus.CONFLICT,
+                code: ERROR_CODES.USER_MAX_PORTFOLIO_ITEMS_REACHED,
+                type: ERROR_TYPES.USER_MAX_PORTFOLIO_ITEMS_REACHED,
+                message: exception.message
+            }
+        }
+
+        if (exception instanceof PortfolioItemNotFoundException) {
+            return {
+                status: HttpStatus.NOT_FOUND,
+                code: ERROR_CODES.USER_PORTFOLIO_ITEM_NOT_FOUND,
+                type: ERROR_TYPES.USER_PORTFOLIO_ITEM_NOT_FOUND,
                 message: exception.message
             }
         }

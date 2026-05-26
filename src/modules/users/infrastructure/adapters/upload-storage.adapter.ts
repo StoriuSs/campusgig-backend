@@ -31,6 +31,25 @@ export class UploadStorageAdapter implements StoragePort {
         }
     }
 
+    async uploadPortfolioItem(fileBuffer: Buffer, originalName: string, userId: string): Promise<UploadedFileResult> {
+        const file = {
+            buffer: fileBuffer,
+            originalname: originalName,
+            // The frontend's crop modal exports JPEG (Risk 10 in plan), but
+            // the server-side sharp pipeline normalizes to WebP anyway.
+            mimetype: 'image/jpeg'
+        } as Express.Multer.File
+
+        const result = await this.uploadService.uploadPortfolioItem(file, userId)
+
+        return {
+            key: result.key,
+            path: result.path,
+            width: result.width,
+            height: result.height
+        }
+    }
+
     async deleteFile(filePath: string): Promise<void> {
         await this.uploadService.deleteFile(filePath)
     }
