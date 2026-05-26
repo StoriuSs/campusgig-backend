@@ -5,8 +5,7 @@ import { Logger } from 'nestjs-pino'
 import { NestExpressApplication } from '@nestjs/platform-express'
 import helmet from 'helmet'
 import cookieParser from 'cookie-parser'
-import * as swaggerUi from 'swagger-ui-express'
-import * as YAML from 'yamljs'
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
 import * as path from 'path'
 import basicAuth from 'express-basic-auth'
 import { AppModule } from './app.module'
@@ -101,23 +100,18 @@ async function bootstrap() {
         })
     )
 
-    // Load and serve OpenAPI documentation
-    try {
-        const swaggerDocument = YAML.load(path.join(process.cwd(), 'swagger-docs.yaml'))
-        app.use(
-            '/api-docs',
-            swaggerUi.serve,
-            swaggerUi.setup(swaggerDocument, {
-                customCss: '.swagger-ui .topbar { display: none }',
-                customSiteTitle: 'NestJS REST API Documentation',
-                swaggerOptions: {
-                    persistAuthorization: true
-                }
-            })
-        )
-    } catch (error) {
-        console.warn('Could not load swagger-docs.yaml file:', error.message)
-    }
+    // OpenAPI documentation — generated from decorators at boot time
+    const swaggerConfig = new DocumentBuilder()
+        .setTitle('CampusGig API')
+        .setDescription('REST API for the CampusGig university gig marketplace')
+        .setVersion('1.0')
+        .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'keycloak-jwt')
+        .build()
+    const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig)
+    SwaggerModule.setup('api-docs', app, swaggerDocument, {
+        swaggerOptions: { persistAuthorization: true },
+        customSiteTitle: 'CampusGig API Docs'
+    })
 
     // Initialize Bull Board dashboard directly on Express bypassing NestJS routing prefix
     const serverAdapter = new ExpressAdapter()

@@ -1,14 +1,65 @@
-import { Exclude, Expose } from 'class-transformer'
-import { IsString, IsBoolean, IsOptional, IsArray, IsEmail, IsInt, Min, MaxLength } from 'class-validator'
+import { Exclude, Expose, Type } from 'class-transformer'
+import {
+    IsString,
+    IsBoolean,
+    IsOptional,
+    IsArray,
+    IsEmail,
+    IsInt,
+    Min,
+    MaxLength,
+    ValidateNested
+} from 'class-validator'
+import { ApiProperty } from '@nestjs/swagger'
 
 // ============================================
 // Response DTOs for HTTP endpoints
 // ============================================
 
-/**
- * User profile combining Keycloak token info + local DB preferences
- * Returned by GET /api/v1/users/me
- */
+@Exclude()
+export class SkillResponseDto {
+    @Expose()
+    @IsString()
+    id!: string
+
+    @Expose()
+    @IsString()
+    @MaxLength(30)
+    name!: string
+
+    @Expose()
+    @IsInt()
+    @Min(0)
+    position!: number
+}
+
+@Exclude()
+export class PortfolioItemResponseDto {
+    @Expose()
+    @IsString()
+    id!: string
+
+    @Expose()
+    @ApiProperty({ description: 'Presigned S3 GET URL (1-hour TTL)' })
+    @IsString()
+    imageUrl!: string
+
+    @Expose()
+    @IsInt()
+    @Min(1)
+    width!: number
+
+    @Expose()
+    @IsInt()
+    @Min(1)
+    height!: number
+
+    @Expose()
+    @IsInt()
+    @Min(0)
+    position!: number
+}
+
 @Exclude()
 export class UserProfileResponseDto {
     @Expose()
@@ -48,18 +99,126 @@ export class UserProfileResponseDto {
     @Expose()
     @IsOptional()
     @IsString()
-    @MaxLength(500)
+    @MaxLength(1000)
     bio?: string
 
     @Expose()
     @IsOptional()
     @IsBoolean()
     hasSetUsername?: boolean
+
+    // ─── Feature 02 additions ────────────────────────────────────
+
+    @Expose()
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    location?: string | null
+
+    @Expose()
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    roleLine?: string | null
+
+    @Expose()
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    languages?: string | null
+
+    @Expose()
+    @ApiProperty({ description: 'True if the user has been granted the Endorsed badge by an admin' })
+    @IsBoolean()
+    endorsed!: boolean
+
+    @Expose()
+    @ApiProperty({ description: 'ISO 8601 date string derived from createdAt' })
+    @IsString()
+    memberSince!: string
+
+    @Expose()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => SkillResponseDto)
+    skills!: SkillResponseDto[]
+
+    @Expose()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => PortfolioItemResponseDto)
+    portfolioItems!: PortfolioItemResponseDto[]
 }
 
-/**
- * Response for updateProfile endpoint
- */
+@Exclude()
+export class PublicProfileResponseDto {
+    @Expose()
+    @IsString()
+    id!: string
+
+    @Expose()
+    @IsString()
+    @MaxLength(50)
+    username!: string
+
+    @Expose()
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    displayName?: string | null
+
+    @Expose()
+    @IsOptional()
+    @IsString()
+    avatarUrl?: string | null
+
+    @Expose()
+    @IsOptional()
+    @IsString()
+    @MaxLength(1000)
+    bio?: string | null
+
+    @Expose()
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    location?: string | null
+
+    @Expose()
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    roleLine?: string | null
+
+    @Expose()
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    languages?: string | null
+
+    @Expose()
+    @ApiProperty({ description: 'True if the user has been granted the Endorsed badge by an admin' })
+    @IsBoolean()
+    endorsed!: boolean
+
+    @Expose()
+    @ApiProperty({ description: 'ISO 8601 date string derived from createdAt' })
+    @IsString()
+    memberSince!: string
+
+    @Expose()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => SkillResponseDto)
+    skills!: SkillResponseDto[]
+
+    @Expose()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => PortfolioItemResponseDto)
+    portfolioItems!: PortfolioItemResponseDto[]
+}
+
 @Exclude()
 export class UpdateProfileResponseDto {
     @Expose()
@@ -77,13 +236,31 @@ export class UpdateProfileResponseDto {
     @Expose()
     @IsOptional()
     @IsString()
-    avatarUrl?: string
+    avatarUrl?: string | null
 
     @Expose()
     @IsOptional()
     @IsString()
-    @MaxLength(500)
+    @MaxLength(1000)
     bio?: string
+
+    @Expose()
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    location?: string | null
+
+    @Expose()
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    roleLine?: string | null
+
+    @Expose()
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    languages?: string | null
 
     @Expose()
     @IsOptional()
@@ -91,9 +268,6 @@ export class UpdateProfileResponseDto {
     hasSetUsername?: boolean
 }
 
-/**
- * Response for setUsername endpoint
- */
 @Exclude()
 export class SetUsernameResponseDto {
     @Expose()
@@ -105,12 +279,10 @@ export class SetUsernameResponseDto {
     hasSetUsername: boolean
 }
 
-/**
- * Response for uploadAvatar endpoint
- */
 @Exclude()
 export class UploadAvatarResponseDto {
     @Expose()
+    @ApiProperty({ description: 'Presigned S3 GET URL (1-hour TTL)', nullable: true })
     @IsOptional()
     @IsString()
     avatarUrl: string | null
@@ -128,6 +300,7 @@ export class UploadAvatarResponseDto {
     height?: number
 
     @Expose()
+    @ApiProperty({ description: 'ISO 8601 timestamp of the upload' })
     @IsString()
     uploadedAt: string
 }

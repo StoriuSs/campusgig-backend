@@ -6,6 +6,16 @@
         "webpack": false,
         "tsConfigPath": "tsconfig.build.json",
         "assets": ["src/modules/email/templates/**/*"],
-        "watchAssets": true
+        "watchAssets": true,
+        "plugins": [
+            {
+                "name": "@nestjs/swagger",
+                "options": {
+                    "introspectComments": true,
+                    "classValidatorShim": true,
+                    "dtoFileNameSuffix": [".dto.ts", ".request.dto.ts", ".response.dto.ts"]
+                }
+            }
+        ]
     }
 }

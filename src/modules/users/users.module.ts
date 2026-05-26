@@ -14,9 +14,15 @@ import {
     SetUsernameHandler,
     UploadAvatarHandler,
     DeleteAccountHandler,
+    AddSkillHandler,
+    RemoveSkillHandler,
+    AddPortfolioItemHandler,
+    RemovePortfolioItemHandler,
     CheckUsernameHandler,
+    GetPublicProfileByUsernameHandler,
     InvalidateCacheHandler,
     CleanupOldAvatarHandler,
+    CleanupPortfolioImageHandler,
     EnqueueKeycloakDeleteHandler
 } from './application'
 
@@ -27,13 +33,27 @@ import { PrismaUserRepository, RedisCacheAdapter, UploadStorageAdapter } from '.
 import { UsersController, FileCleanupConsumer, KeycloakDeleteConsumer } from './presentation'
 
 // Command Handlers array
-const CommandHandlers = [UpdateProfileHandler, SetUsernameHandler, UploadAvatarHandler, DeleteAccountHandler]
+const CommandHandlers = [
+    UpdateProfileHandler,
+    SetUsernameHandler,
+    UploadAvatarHandler,
+    DeleteAccountHandler,
+    AddSkillHandler,
+    RemoveSkillHandler,
+    AddPortfolioItemHandler,
+    RemovePortfolioItemHandler
+]
 
 // Query Handlers array
-const QueryHandlers = [CheckUsernameHandler]
+const QueryHandlers = [CheckUsernameHandler, GetPublicProfileByUsernameHandler]
 
 // Event Handlers array
-const EventHandlers = [InvalidateCacheHandler, CleanupOldAvatarHandler, EnqueueKeycloakDeleteHandler]
+const EventHandlers = [
+    InvalidateCacheHandler,
+    CleanupOldAvatarHandler,
+    CleanupPortfolioImageHandler,
+    EnqueueKeycloakDeleteHandler
+]
 
 @Module({
     imports: [CqrsModule, UploadModule, BullModule.registerQueue({ name: 'keycloak-sync' }, { name: 'file-cleanup' })],

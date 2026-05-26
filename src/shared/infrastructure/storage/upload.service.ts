@@ -80,6 +80,31 @@ export class UploadService {
     }
 
     /**
+     * Upload portfolio image with automatic processing (resize to max 1600×1200,
+     * convert to WebP, strip EXIF). Same shape as uploadAvatar.
+     */
+    async uploadPortfolioItem(file: Express.Multer.File, userId: string): Promise<UploadedFile> {
+        const buffer = file.buffer || (await this.getFileBuffer(file))
+        const processed = await this.imageProcessingService.processPortfolioImage(buffer)
+
+        const uploaded = await this.storageService.uploadBuffer(
+            processed.buffer,
+            `portfolio.${processed.format}`,
+            `image/${processed.format}`,
+            {
+                subDirectory: 'portfolio',
+                filenamePrefix: `portfolio-${userId}`
+            }
+        )
+
+        return {
+            ...uploaded,
+            width: processed.width,
+            height: processed.height
+        }
+    }
+
+    /**
      * Delete a file from storage
      */
     async deleteFile(filePath: string): Promise<void> {

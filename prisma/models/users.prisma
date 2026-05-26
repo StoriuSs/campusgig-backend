@@ -1,21 +1,34 @@
 model User {
-  id         String   @id @default(uuid())
-  keycloakId String   @unique // Links to Keycloak user (token.sub)
-  
+  id         String @id @default(uuid())
+  keycloakId String @unique // Links to Keycloak user (token.sub)
+
   // Profile / searchable fields (store when app needs search/profile views)
-  username     String?  @unique
-  email         String? // This is set as not unique on purpose for the soft-delete flow since Keycloak would make sure there is no duplicate active emails anyway
-  displayName  String?
-  avatarUrl    String?
-  bio          String?
+  username       String? @unique
+  email          String? // This is set as not unique on purpose for the soft-delete flow since Keycloak would make sure there is no duplicate active emails anyway
+  displayName    String?
+  avatarUrl      String? // Stores the S3 OBJECT KEY, not a URL. Controller resolves to a presigned GET URL on read. Field name is legacy from the boilerplate; rename to avatarKey is a post-MVP cleanup.
+  bio            String?
   hasSetUsername Boolean @default(false)
   // emailVerified Boolean  @default(false)
   // lastSyncedAt  DateTime? @db.Timestamptz(6)
-  
+
+  // Profile fields added in Feature 02 (Profile + First-Login + Dashboard skeleton)
+  location  String? // Free text (e.g. "Ho Chi Minh City"). Optional. Max 100 chars (app-side).
+  roleLine  String? // Short tagline shown on profile header. Max 100 chars (app-side).
+  languages String? // Free text (e.g. "Vietnamese (Native), English (Fluent)"). Max 200 chars (app-side).
+
+  // Endorsed-badge fields — column added now to avoid migration later. Admin-grant UI ships in Feature 13.
+  endorsedAt DateTime? @db.Timestamptz(6)
+  endorsedBy String? // Admin user ID who granted endorsement. FK enforcement deferred until admin role exists.
+
   createdAt DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
   deletedBy String?
+
+  // Relations (Feature 02)
+  skills         UserSkill[]
+  portfolioItems PortfolioItem[]
 
   @@index([keycloakId])
   @@index([username])
@@ -24,3 +37,33 @@ model User {
   @@index([deletedAt])
 }
 
+// User's listed skills (free-form tags). Owned by User; cascade on delete.
+// Modeled as a table (not a TEXT[] column) so future features can search/filter
+// users by skill without needing GIN-indexing. See specs/00-database-schema.spec.md.
+model UserSkill {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String // Free-form, max 30 chars (app-side validation).
+  position  Int // 0-based display order. v1 uses creation order; drag-reorder is a future feature.
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// User's portfolio images. Owned by User; cascade on delete.
+// Each item is an S3 object key (resolved to presigned URL by controller on read).
+model PortfolioItem {
+  id        String   @id @default(uuid())
+  userId    String
+  imageKey  String // S3 object key, same pattern as User.avatarUrl
+  width     Int // Stored after server-side image processing (max 1600 wide)
+  height    Int // Stored after server-side image processing (max 1200 tall)
+  position  Int // 0-based display order. Newest first by default in v1.
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

@@ -1,3 +1,5 @@
 export * from './entities/user.entity'
+export * from './entities/user-skill.entity'
+export * from './entities/portfolio-item.entity'
 export * from './ports/user.repository.port'
 export * from './exceptions'
