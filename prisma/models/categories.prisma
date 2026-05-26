@@ -1,0 +1,20 @@
+// Service categories (Feature 03). Admin-managed CRUD; future Gig.categoryId
+// (Feature 04) will reference Category.id.
+//
+// Name uniqueness is case-insensitive — enforced via a raw SQL UNIQUE INDEX
+// on LOWER(name) in the migration file (Prisma doesn't natively model
+// functional indexes; the @@unique is added on the literal column for
+// safety + the raw SQL covers case-insensitive duplicates).
+model Category {
+  id          String  @id @default(uuid())
+  name        String  @unique // case-sensitive uniqueness via @@unique; case-insensitive via raw SQL index in migration
+  icon        String // Antd icon component name, e.g. "BookOutlined". Validated against allowed list in domain layer.
+  description String? // App-enforced max 200 chars.
+
+  // Audit columns
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+  createdById String? // Admin user who created this. Nullable for resilience if that admin is later deleted.
+
+  @@index([name])
+}

@@ -26,6 +26,10 @@ export class UserEntity {
     endorsedAt: Date | null
     endorsedBy: string | null
 
+    // Admin role flag — set by JIT provisioner from JWT `realm_access.roles`.
+    // Buyer/seller queries filter `WHERE isAdmin = false` to keep admins out.
+    isAdmin: boolean
+
     readonly createdAt: Date
     updatedAt: Date
     deletedAt: Date | null
@@ -45,6 +49,7 @@ export class UserEntity {
         languages?: string | null
         endorsedAt?: Date | null
         endorsedBy?: string | null
+        isAdmin?: boolean
         createdAt?: Date
         updatedAt?: Date
         deletedAt?: Date | null
@@ -63,6 +68,7 @@ export class UserEntity {
         this.languages = props.languages ?? null
         this.endorsedAt = props.endorsedAt ?? null
         this.endorsedBy = props.endorsedBy ?? null
+        this.isAdmin = props.isAdmin ?? false
         this.createdAt = props.createdAt ?? new Date()
         this.updatedAt = props.updatedAt ?? new Date()
         this.deletedAt = props.deletedAt ?? null

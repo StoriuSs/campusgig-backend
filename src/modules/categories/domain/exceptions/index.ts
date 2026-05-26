@@ -1,0 +1,5 @@
+export * from './category-not-found.error'
+export * from './duplicate-category-name.error'
+export * from './invalid-category-icon.error'
+export * from './category-has-gigs.error'
+export * from './invalid-reassign-target.error'

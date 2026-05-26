@@ -21,6 +21,10 @@ model User {
   endorsedAt DateTime? @db.Timestamptz(6)
   endorsedBy String? // Admin user ID who granted endorsement. FK enforcement deferred until admin role exists.
 
+  // Admin role flag — set by JIT provisioner when the JWT carries the `admin` realm role.
+  // Filter buyer/seller queries with `WHERE isAdmin = false` to keep admin records out of Browse, etc.
+  isAdmin Boolean @default(false)
+
   createdAt DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
@@ -35,6 +39,7 @@ model User {
   // @@index([email])
   @@index([keycloakId, deletedAt])
   @@index([deletedAt])
+  @@index([isAdmin])
 }
 
 // User's listed skills (free-form tags). Owned by User; cascade on delete.

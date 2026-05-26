@@ -52,6 +52,7 @@ import { HealthModule } from '@/health/health.module'
 // Feature modules (Hexagonal Architecture)
 import { UsersModule } from '@/modules/users/users.module'
 import { UsersDomainExceptionFilter } from '@/modules/users/presentation'
+import { CategoriesModule } from '@/modules/categories/categories.module'
 
 // Guards
 import { KeycloakAuthGuard } from '@/shared/infrastructure'
@@ -153,7 +154,8 @@ import { RolesGuard } from '@/shared/infrastructure'
         HealthModule,
 
         // Feature modules (Hexagonal Architecture)
-        UsersModule
+        UsersModule,
+        CategoriesModule
     ],
     providers: [
         // Global authentication guard (all routes protected by default)

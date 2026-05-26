@@ -148,6 +148,14 @@ export class UserProfileResponseDto {
     @ValidateNested({ each: true })
     @Type(() => PortfolioItemResponseDto)
     portfolioItems!: PortfolioItemResponseDto[]
+
+    @Expose()
+    @ApiProperty({
+        description:
+            'True when the user has the `admin` Keycloak realm role. Admins do not appear in Browse and have no public profile.'
+    })
+    @IsBoolean()
+    isAdmin!: boolean
 }
 
 @Exclude()
