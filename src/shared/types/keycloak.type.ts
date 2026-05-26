@@ -46,6 +46,7 @@ export interface LocalUserData {
     avatarUrl?: string
     bio?: string
     hasSetUsername?: boolean
+    isAdmin?: boolean // True when JIT provisioner saw `admin` realm role on the token
 }
 
 /**

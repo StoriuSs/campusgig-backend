@@ -110,7 +110,8 @@ export class UsersController {
             endorsed: bundle.user.isEndorsed,
             memberSince: bundle.user.createdAt.toISOString(),
             skills: bundle.skills.map((s) => this.mapSkill(s)),
-            portfolioItems
+            portfolioItems,
+            isAdmin: bundle.user.isAdmin
         })
 
         return createResponse(

@@ -27,6 +27,7 @@
     "prisma:studio": "dotenv -e .env.development -- prisma studio",
     "prisma:seed": "ts-node prisma/seed.ts",
     "prisma:reset": "prisma migrate reset",
+    "admin:create": "dotenv -e .env.development -- ts-node -r tsconfig-paths/register scripts/admin-create.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",

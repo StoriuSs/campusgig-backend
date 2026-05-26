@@ -127,7 +127,10 @@ export class KeycloakAuthGuard implements CanActivate {
      * - Caches the result to reduce database load
      */
     private async syncUserToDatabase(keycloakUser: KeycloakUserData): Promise<LocalUserData> {
-        const cacheKey = `user:keycloak:${keycloakUser.id}`
+        // Cache key includes the admin-role bit so a role change in Keycloak
+        // forces a cache miss → reconciliation runs on the next request.
+        const tokenHasAdminRoleForCacheKey = keycloakUser.roles.includes('admin') ? '1' : '0'
+        const cacheKey = `user:keycloak:${keycloakUser.id}:a${tokenHasAdminRoleForCacheKey}`
 
         try {
             const cachedUser = await this.cache.get(cacheKey)
@@ -152,20 +155,40 @@ export class KeycloakAuthGuard implements CanActivate {
             })
         }
 
+        const tokenHasAdminRole = keycloakUser.roles.includes('admin')
+
         if (!user) {
+            // First-time JIT provisioning. If the token carries the `admin` realm role,
+            // mark the row as admin AND set hasSetUsername=true so the buyer/seller
+            // first-login flow (UsernameSetupModal) never gates them.
             user = await this.prisma.user.create({
                 data: {
                     keycloakId: keycloakUser.id,
                     email: keycloakUser.email,
-                    ...(keycloakUser.name ? { displayName: keycloakUser.name } : {})
+                    ...(keycloakUser.name ? { displayName: keycloakUser.name } : {}),
+                    ...(tokenHasAdminRole ? { isAdmin: true, hasSetUsername: true } : {})
                 }
             })
-        } else if (user.email !== keycloakUser.email) {
-            // continuously sync email from IDP if changed
-            user = await this.prisma.user.update({
-                where: { id: user.id },
-                data: { email: keycloakUser.email }
-            })
+        } else {
+            // Reconcile drift on every authed request. Only write when something
+            // actually differs — keeps the hot path cheap.
+            const patch: { email?: string; isAdmin?: boolean; hasSetUsername?: boolean } = {}
+            if (user.email !== keycloakUser.email) patch.email = keycloakUser.email
+            if (user.isAdmin !== tokenHasAdminRole) {
+                patch.isAdmin = tokenHasAdminRole
+                // Promotion: also flip hasSetUsername so the modal doesn't bounce them
+                // on next reload. We don't undo this on demotion — if a user lost admin,
+                // they may want to use a username they had pre-promotion.
+                if (tokenHasAdminRole && !user.hasSetUsername) {
+                    patch.hasSetUsername = true
+                }
+            }
+            if (Object.keys(patch).length > 0) {
+                user = await this.prisma.user.update({
+                    where: { id: user.id },
+                    data: patch
+                })
+            }
         }
 
         const localUserData: LocalUserData = {
@@ -175,7 +198,8 @@ export class KeycloakAuthGuard implements CanActivate {
             displayName: user.displayName ?? undefined,
             avatarUrl: user.avatarUrl ?? undefined,
             bio: user.bio ?? undefined,
-            hasSetUsername: user.hasSetUsername ?? false
+            hasSetUsername: user.hasSetUsername ?? false,
+            isAdmin: user.isAdmin
         }
 
         try {

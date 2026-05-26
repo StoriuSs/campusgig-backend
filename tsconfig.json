@@ -40,6 +40,6 @@
             "@shared/*": ["src/shared/*"]
         }
     },
-    "include": ["src/**/*", "test/**/*", "generated/**/*", "prisma.config.ts", "jest.config.js", "test/jest-e2e.config.js"],
+    "include": ["src/**/*", "test/**/*", "scripts/**/*", "generated/**/*", "prisma.config.ts", "jest.config.js", "test/jest-e2e.config.js"],
     "exclude": ["node_modules", "dist"]
 }

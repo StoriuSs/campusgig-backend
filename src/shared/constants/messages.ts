@@ -88,6 +88,14 @@ export const MESSAGES = {
         USERNAME_ALREADY_SET: 'Username has already been set and cannot be changed'
     },
 
+    // Category messages (Feature 03)
+    CATEGORY: {
+        LIST_FETCHED: 'Categories retrieved successfully',
+        CREATED: 'Category created successfully',
+        UPDATED: 'Category updated successfully',
+        DELETED: 'Category deleted successfully'
+    },
+
     // Health messages
     HEALTH: {
         CHECK_SUCCESS: 'Health check successful',
