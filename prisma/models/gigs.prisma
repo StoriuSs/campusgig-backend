@@ -1,0 +1,91 @@
+// Feature 04 — Gig creation + lifecycle (seller-side).
+// See docs/specs/04-gig-creation-and-lifecycle.spec.md § Schema.
+
+model Gig {
+  id          String @id @default(uuid())
+  sellerId    String // FK to User.id. Filter buyer/seller queries with isAdmin=false.
+  categoryId  String // FK to Category.id.
+  title       String // 10-80 chars (app-enforced)
+  description String // 100-5000 chars (app-enforced)
+  priceVnd    Int // Integer VND, 10_000-50_000_000 (app-enforced)
+  deliveryDays Int // 1-30 (app-enforced)
+
+  // Status: one of Pending / Active / Paused / Rejected / Deleted.
+  // App-level enum, not Postgres ENUM (per schema convention).
+  status String @default("Pending")
+
+  // Rejection metadata (populated by admin in Feature 05).
+  rejectionCategory String? // Pricing / Description / Image quality / Policy violation / Other
+  rejectionReason   String? // Admin feedback. Min 20 chars when present.
+
+  // Denormalized: id of the GigImage with position=0. Recomputed on insert / delete / reorder.
+  coverImageId String?
+
+  submittedAt DateTime? @db.Timestamptz(6) // First Pending transition
+  approvedAt  DateTime? @db.Timestamptz(6) // Feature 05 will set
+  pausedAt    DateTime? @db.Timestamptz(6)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(6)
+  deletedAt DateTime? @db.Timestamptz(6)
+  deletedBy String?
+
+  // Relations
+  images  GigImage[]
+  bullets GigBullet[]
+  faqs    GigFaq[]
+
+  @@index([sellerId])
+  @@index([sellerId, status])
+  @@index([status])
+  @@index([categoryId])
+  @@index([deletedAt])
+}
+
+// Per-gig images. Cascade-deleted with the parent gig (soft-delete on Gig
+// keeps these rows for stats integrity; hard-delete via Prisma would cascade).
+// Orphan images (gigId=null) can exist briefly during the Create flow; cleaned
+// up by the file-cleanup BullMQ queue with a 1-hour TTL.
+model GigImage {
+  id       String  @id @default(uuid())
+  gigId    String? // Null when orphan (just uploaded, not yet attached)
+  imageKey String // S3 object key. Resolved to presigned URL on read.
+  width    Int
+  height   Int
+  position Int // 0-9. Position 0 is the cover.
+
+  uploaderId String // User who uploaded; ownership check for orphans.
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  gig Gig? @relation(fields: [gigId], references: [id], onDelete: Cascade)
+
+  @@index([gigId, position])
+  @@index([gigId])
+  @@index([uploaderId])
+}
+
+// "What's included" bullets. Max 5 per gig.
+model GigBullet {
+  id       String @id @default(uuid())
+  gigId    String
+  text     String // 5-80 chars
+  position Int // 0-4
+
+  gig Gig @relation(fields: [gigId], references: [id], onDelete: Cascade)
+
+  @@index([gigId, position])
+}
+
+// Optional FAQ entries on the gig. Max 5 per gig.
+model GigFaq {
+  id       String @id @default(uuid())
+  gigId    String
+  question String // 5-120 chars
+  answer   String // 10-500 chars
+  position Int // 0-4
+
+  gig Gig @relation(fields: [gigId], references: [id], onDelete: Cascade)
+
+  @@index([gigId, position])
+}

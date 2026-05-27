@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { BadRequestException } from '@nestjs/common'
+import { EventBus } from '@nestjs/cqrs'
 import { CreateCategoryHandler } from './create-category.handler'
 import { CreateCategoryCommand } from './create-category.command'
 import {
@@ -19,8 +20,14 @@ describe('CreateCategoryHandler', () => {
             create: jest.fn()
         }
 
+        const mockEventBus = { publish: jest.fn() }
+
         const module: TestingModule = await Test.createTestingModule({
-            providers: [CreateCategoryHandler, { provide: CATEGORY_REPOSITORY_PORT, useValue: mockRepo }]
+            providers: [
+                CreateCategoryHandler,
+                { provide: CATEGORY_REPOSITORY_PORT, useValue: mockRepo },
+                { provide: EventBus, useValue: mockEventBus }
+            ]
         }).compile()
 
         handler = module.get<CreateCategoryHandler>(CreateCategoryHandler)

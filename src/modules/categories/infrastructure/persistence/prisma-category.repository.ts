@@ -89,6 +89,11 @@ export class PrismaCategoryRepository implements CategoryRepositoryPort {
         return { items, total }
     }
 
+    async findAll(): Promise<CategoryEntity[]> {
+        const rows = await this.prisma.category.findMany({ orderBy: { name: 'asc' } })
+        return rows.map((row) => CategoryMapper.toDomain(row))
+    }
+
     async countGigsForCategory(_categoryId: string): Promise<number> {
         // Feature 03 stub. Feature 04 will replace with:
         //   return this.prisma.gig.count({ where: { categoryId: _categoryId, deletedAt: null } })

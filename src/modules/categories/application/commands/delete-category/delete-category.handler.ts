@@ -1,4 +1,4 @@
-import { CommandHandler, ICommandHandler } from '@nestjs/cqrs'
+import { CommandHandler, ICommandHandler, EventBus } from '@nestjs/cqrs'
 import { Inject } from '@nestjs/common'
 import { DeleteCategoryCommand } from './delete-category.command'
 import {
@@ -8,10 +8,14 @@ import {
     CategoryHasGigsException,
     InvalidReassignTargetException
 } from '@/modules/categories/domain'
+import { CategoryDeletedEvent } from '../../events/category-deleted.event'
 
 @CommandHandler(DeleteCategoryCommand)
 export class DeleteCategoryHandler implements ICommandHandler<DeleteCategoryCommand> {
-    constructor(@Inject(CATEGORY_REPOSITORY_PORT) private readonly categoryRepo: CategoryRepositoryPort) {}
+    constructor(
+        @Inject(CATEGORY_REPOSITORY_PORT) private readonly categoryRepo: CategoryRepositoryPort,
+        private readonly eventBus: EventBus
+    ) {}
 
     async execute(command: DeleteCategoryCommand): Promise<void> {
         const target = await this.categoryRepo.findById(command.id)
@@ -24,6 +28,7 @@ export class DeleteCategoryHandler implements ICommandHandler<DeleteCategoryComm
         if (gigCount === 0) {
             // No gigs — simple delete. reassignTo is ignored.
             await this.categoryRepo.delete(command.id)
+            this.eventBus.publish(new CategoryDeletedEvent(command.id))
             return
         }
 
@@ -43,5 +48,6 @@ export class DeleteCategoryHandler implements ICommandHandler<DeleteCategoryComm
 
         await this.categoryRepo.bulkReassignGigs(command.id, command.reassignTo)
         await this.categoryRepo.delete(command.id)
+        this.eventBus.publish(new CategoryDeletedEvent(command.id))
     }
 }

@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing'
+import { EventBus } from '@nestjs/cqrs'
 import { DeleteCategoryHandler } from './delete-category.handler'
 import { DeleteCategoryCommand } from './delete-category.command'
 import {
@@ -29,8 +30,14 @@ describe('DeleteCategoryHandler', () => {
             delete: jest.fn()
         }
 
+        const mockEventBus = { publish: jest.fn() }
+
         const module: TestingModule = await Test.createTestingModule({
-            providers: [DeleteCategoryHandler, { provide: CATEGORY_REPOSITORY_PORT, useValue: mockRepo }]
+            providers: [
+                DeleteCategoryHandler,
+                { provide: CATEGORY_REPOSITORY_PORT, useValue: mockRepo },
+                { provide: EventBus, useValue: mockEventBus }
+            ]
         }).compile()
 
         handler = module.get<DeleteCategoryHandler>(DeleteCategoryHandler)
