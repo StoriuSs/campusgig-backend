@@ -107,7 +107,11 @@ export const MESSAGES = {
         DELETED: 'Gig deleted',
         IMAGE_UPLOADED: 'Image uploaded successfully',
         IMAGE_DELETED: 'Image deleted',
-        IMAGES_REORDERED: 'Images reordered'
+        IMAGES_REORDERED: 'Images reordered',
+        // Admin Gig Queue (Feature 05)
+        QUEUE_FETCHED: 'Gig queue retrieved successfully',
+        APPROVED: 'Gig approved',
+        REJECTED: 'Gig rejected'
     },
 
     // Health messages

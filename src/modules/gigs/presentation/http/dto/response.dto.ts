@@ -1,5 +1,5 @@
 import { Exclude, Expose, Type } from 'class-transformer'
-import { IsArray, IsInt, IsOptional, IsString, Min, ValidateNested } from 'class-validator'
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min, ValidateNested } from 'class-validator'
 import { ApiProperty } from '@nestjs/swagger'
 
 @Exclude()
@@ -135,7 +135,7 @@ export class UploadGigImageResponseDto {
 @Exclude()
 export class UpdateGigResponseDto {
     @Expose() gig!: MyGigDetailDto
-    @Expose() statusChanged!: boolean
+    @Expose() @IsBoolean() statusChanged!: boolean
     @Expose() @IsString() previousStatus!: string
     @Expose() @IsString() newStatus!: string
 }

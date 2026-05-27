@@ -41,6 +41,61 @@ export interface MyGigsFilters {
     pageSize: number
 }
 
+// ── Admin Gig Queue (Feature 05) ────────────────────────────────────────────
+
+export type AdminQueueStatusFilter = 'all' | 'firstSubmission' | 'reReview'
+export type AdminQueueSort = 'oldest' | 'newest' | 'priceHigh' | 'priceLow'
+
+export interface AdminQueueFilters {
+    status: AdminQueueStatusFilter
+    categoryId?: string
+    /** Search term matched against gig title OR seller display name. */
+    q?: string
+    sort: AdminQueueSort
+    page: number
+    pageSize: number
+}
+
+/** Seller summary shown in the queue + review modal. `avatarKey` is an S3 key
+ *  the presentation layer resolves to a presigned URL. */
+export interface AdminQueueSeller {
+    id: string
+    username: string | null
+    displayName: string
+    avatarKey: string | null
+    isEndorsed: boolean
+}
+
+export interface AdminQueueRow {
+    gig: GigEntity
+    coverImage: GigImageEntity | null
+    categoryName: string
+    /** True when the gig has been approved before (approvedAt != null) — a
+     *  re-review after a sensitive edit, vs. a first submission. */
+    isReReview: boolean
+    seller: AdminQueueSeller
+}
+
+export interface AdminQueueCounts {
+    all: number
+    firstSubmission: number
+    reReview: number
+}
+
+export interface AdminQueueResult {
+    items: AdminQueueRow[]
+    total: number
+    counts: AdminQueueCounts
+}
+
+/** Full gig detail for the admin Review Modal. Like `GigWithRelations` but
+ *  not seller-scoped and carries the seller block. `joinedAt` = seller's
+ *  account creation date (membership date in the design). */
+export interface AdminGigDetail extends GigWithRelations {
+    isReReview: boolean
+    seller: AdminQueueSeller & { joinedAt: Date }
+}
+
 export interface CreateGigData {
     sellerId: string
     categoryId: string
@@ -70,6 +125,12 @@ export interface GigRepositoryPort {
     findByIdWithRelations(id: string): Promise<GigWithRelations | null>
     findMine(filters: MyGigsFilters): Promise<MyGigsListResult>
     countByStatus(sellerId: string): Promise<Record<MyGigsStatusFilter, number>>
+
+    // ── Admin Gig Queue (Feature 05) ───────────────────────────────────────
+    findForAdminQueue(filters: AdminQueueFilters): Promise<AdminQueueResult>
+    findByIdForAdmin(id: string): Promise<AdminGigDetail | null>
+    approve(id: string): Promise<GigEntity>
+    reject(id: string, rejectionCategory: string, rejectionReason: string): Promise<GigEntity>
 
     // ── Writes (Phase C) ───────────────────────────────────────────────────
     create(data: CreateGigData, nextStatus: GigStatus): Promise<GigEntity>

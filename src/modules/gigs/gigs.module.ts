@@ -14,10 +14,14 @@ import {
     SoftDeleteGigHandler,
     UploadGigImageHandler,
     DeleteGigImageHandler,
-    ReorderGigImagesHandler
+    ReorderGigImagesHandler,
+    ApproveGigHandler,
+    RejectGigHandler,
+    ListAdminGigQueueHandler,
+    GetAdminGigByIdHandler
 } from './application'
 import { PrismaGigRepository, GigStorageAdapter } from './infrastructure'
-import { GigsController } from './presentation'
+import { GigsController, AdminGigsController } from './presentation'
 
 // Re-export the categories repository binding via the CategoriesModule import? No —
 // CategoriesModule provides CATEGORY_REPOSITORY_PORT, and we just import the module.
@@ -31,13 +35,15 @@ const CommandHandlers = [
     SoftDeleteGigHandler,
     UploadGigImageHandler,
     DeleteGigImageHandler,
-    ReorderGigImagesHandler
+    ReorderGigImagesHandler,
+    ApproveGigHandler,
+    RejectGigHandler
 ]
-const QueryHandlers = [ListMyGigsHandler, GetMyGigByIdHandler]
+const QueryHandlers = [ListMyGigsHandler, GetMyGigByIdHandler, ListAdminGigQueueHandler, GetAdminGigByIdHandler]
 
 @Module({
     imports: [CqrsModule, UploadModule, CategoriesModule],
-    controllers: [GigsController],
+    controllers: [GigsController, AdminGigsController],
     providers: [
         { provide: GIG_REPOSITORY_PORT, useClass: PrismaGigRepository },
         { provide: GIG_STORAGE_PORT, useClass: GigStorageAdapter },

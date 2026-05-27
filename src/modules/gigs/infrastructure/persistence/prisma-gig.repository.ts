@@ -12,8 +12,15 @@ import {
     CreateGigData,
     UpdateGigData,
     GigStatus,
-    GigNotFoundException
+    GigNotFoundException,
+    AdminQueueFilters,
+    AdminQueueResult,
+    AdminQueueStatusFilter,
+    AdminQueueSort,
+    AdminQueueSeller,
+    AdminGigDetail
 } from '@/modules/gigs/domain'
+import { Prisma } from '@/generated/prisma/client'
 import { GigMapper, GigImageMapper, GigBulletMapper, GigFaqMapper } from '../mappers/gig.mapper'
 
 /**
@@ -181,8 +188,8 @@ export class PrismaGigRepository implements GigRepositoryPort {
                 updatedFields.status = nextStatus
                 if (nextStatus === 'Pending') {
                     updatedFields.submittedAt = new Date()
-                    updatedFields.rejectionCategory = null
-                    updatedFields.rejectionReason = null
+                    // Keep rejectionCategory/rejectionReason so isReReview stays true
+                    // for the admin queue. They are cleared on approve() or a new reject().
                 }
             }
 
@@ -263,6 +270,149 @@ export class PrismaGigRepository implements GigRepositoryPort {
                 deletedBy: actorId
             }
         })
+    }
+
+    // ───────────────────────────────────────────────────────────────────────
+    // Admin Gig Queue (Feature 05)
+    // ───────────────────────────────────────────────────────────────────────
+
+    async approve(id: string): Promise<GigEntity> {
+        const updated = await this.prisma.gig.update({
+            where: { id },
+            data: {
+                status: 'Active',
+                approvedAt: new Date(),
+                // A re-reviewed-then-approved gig should not carry stale rejection text.
+                rejectionCategory: null,
+                rejectionReason: null
+            }
+        })
+        return GigMapper.toDomain(updated)
+    }
+
+    async reject(id: string, rejectionCategory: string, rejectionReason: string): Promise<GigEntity> {
+        // Does NOT clear approvedAt — preserves "has been approved before" history
+        // so the Re-review pill stays accurate on the next resubmission.
+        const updated = await this.prisma.gig.update({
+            where: { id },
+            data: { status: 'Rejected', rejectionCategory, rejectionReason }
+        })
+        return GigMapper.toDomain(updated)
+    }
+
+    async findForAdminQueue(filters: AdminQueueFilters): Promise<AdminQueueResult> {
+        // Base where shared by the list query AND the counts (category + search,
+        // but NOT the status clause — so each status tab shows its own total).
+        const baseWhere = await this.buildAdminBaseWhere(filters)
+
+        const where: Prisma.GigWhereInput = { ...baseWhere, ...this.adminStatusToWhere(filters.status) }
+        const orderBy = this.adminSortToOrderBy(filters.sort)
+        const skip = (filters.page - 1) * filters.pageSize
+
+        const [rows, total, all, firstSubmission, reReview] = await this.prisma.$transaction([
+            this.prisma.gig.findMany({
+                where,
+                orderBy,
+                skip,
+                take: filters.pageSize,
+                include: { images: { where: { position: 0 }, take: 1 } }
+            }),
+            this.prisma.gig.count({ where }),
+            this.prisma.gig.count({ where: { ...baseWhere, ...this.adminStatusToWhere('all') } }),
+            this.prisma.gig.count({ where: { ...baseWhere, ...this.adminStatusToWhere('firstSubmission') } }),
+            this.prisma.gig.count({ where: { ...baseWhere, ...this.adminStatusToWhere('reReview') } })
+        ])
+
+        // Resolve category names + sellers in batched follow-up queries (no
+        // Gig→User / Gig→Category relations exist in the schema).
+        const categoryIds = Array.from(new Set(rows.map((r) => r.categoryId)))
+        const sellerIds = Array.from(new Set(rows.map((r) => r.sellerId)))
+        const [categories, sellers] = await Promise.all([
+            categoryIds.length
+                ? this.prisma.category.findMany({
+                      where: { id: { in: categoryIds } },
+                      select: { id: true, name: true }
+                  })
+                : Promise.resolve([]),
+            sellerIds.length
+                ? this.prisma.user.findMany({
+                      where: { id: { in: sellerIds } },
+                      select: { id: true, username: true, displayName: true, avatarUrl: true, endorsedAt: true }
+                  })
+                : Promise.resolve([])
+        ])
+        const categoryNameById = new Map(categories.map((c) => [c.id, c.name]))
+        const sellerById = new Map(sellers.map((s) => [s.id, s]))
+
+        return {
+            items: rows.map((row) => {
+                const s = sellerById.get(row.sellerId)
+                const seller: AdminQueueSeller = {
+                    id: row.sellerId,
+                    username: s?.username ?? null,
+                    displayName: s?.displayName ?? '',
+                    avatarKey: s?.avatarUrl ?? null,
+                    isEndorsed: s?.endorsedAt != null
+                }
+                return {
+                    gig: GigMapper.toDomain(row),
+                    coverImage: row.images[0] ? GigImageMapper.toDomain(row.images[0]) : null,
+                    categoryName: categoryNameById.get(row.categoryId) ?? '',
+                    isReReview: row.approvedAt != null || row.rejectionCategory != null,
+                    seller
+                }
+            }),
+            total,
+            counts: { all, firstSubmission, reReview }
+        }
+    }
+
+    async findByIdForAdmin(id: string): Promise<AdminGigDetail | null> {
+        const row = await this.prisma.gig.findUnique({
+            where: { id },
+            include: {
+                images: { orderBy: { position: 'asc' } },
+                bullets: { orderBy: { position: 'asc' } },
+                faqs: { orderBy: { position: 'asc' } }
+            }
+        })
+        if (!row) return null
+
+        const [category, seller] = await Promise.all([
+            this.prisma.category.findUnique({
+                where: { id: row.categoryId },
+                select: { name: true, icon: true }
+            }),
+            this.prisma.user.findUnique({
+                where: { id: row.sellerId },
+                select: {
+                    id: true,
+                    username: true,
+                    displayName: true,
+                    avatarUrl: true,
+                    endorsedAt: true,
+                    createdAt: true
+                }
+            })
+        ])
+
+        return {
+            gig: GigMapper.toDomain(row),
+            images: row.images.map((i) => GigImageMapper.toDomain(i)),
+            bullets: row.bullets.map((b) => GigBulletMapper.toDomain(b)),
+            faqs: row.faqs.map((f) => GigFaqMapper.toDomain(f)),
+            categoryName: category?.name ?? '',
+            categoryIcon: category?.icon ?? '',
+            isReReview: row.approvedAt != null || row.rejectionCategory != null,
+            seller: {
+                id: row.sellerId,
+                username: seller?.username ?? null,
+                displayName: seller?.displayName ?? '',
+                avatarKey: seller?.avatarUrl ?? null,
+                isEndorsed: seller?.endorsedAt != null,
+                joinedAt: seller?.createdAt ?? row.createdAt
+            }
+        }
     }
 
     // ───────────────────────────────────────────────────────────────────────
@@ -355,6 +505,61 @@ export class PrismaGigRepository implements GigRepositoryPort {
             default:
                 // Exclude Deleted from "all"
                 return { status: { not: 'Deleted' } }
+        }
+    }
+
+    /**
+     * Category + search filters shared by the admin list and its per-status
+     * counts. Excludes the status clause and always hides soft-deleted gigs.
+     * Search has no Gig→User relation to lean on, so seller-name matches are
+     * resolved to IDs via a follow-up query and OR'd with a title match.
+     */
+    private async buildAdminBaseWhere(filters: AdminQueueFilters): Promise<Prisma.GigWhereInput> {
+        const where: Prisma.GigWhereInput = { deletedAt: null }
+        if (filters.categoryId) {
+            where.categoryId = filters.categoryId
+        }
+        if (filters.q) {
+            const matchedSellers = await this.prisma.user.findMany({
+                where: { displayName: { contains: filters.q, mode: 'insensitive' } },
+                select: { id: true }
+            })
+            where.OR = [
+                { title: { contains: filters.q, mode: 'insensitive' } },
+                { sellerId: { in: matchedSellers.map((s) => s.id) } }
+            ]
+        }
+        return where
+    }
+
+    private adminStatusToWhere(filter: AdminQueueStatusFilter): Prisma.GigWhereInput {
+        switch (filter) {
+            case 'firstSubmission':
+                // Never approved and never rejected — truly new.
+                return { status: 'Pending', approvedAt: null, rejectionCategory: null }
+            case 'reReview':
+                // Was approved before (sensitive edit) OR was rejected and resubmitted.
+                return {
+                    status: 'Pending',
+                    OR: [{ approvedAt: { not: null } }, { rejectionCategory: { not: null } }]
+                }
+            case 'all':
+            default:
+                return { status: 'Pending' }
+        }
+    }
+
+    private adminSortToOrderBy(sort: AdminQueueSort): Prisma.GigOrderByWithRelationInput {
+        switch (sort) {
+            case 'newest':
+                return { submittedAt: 'desc' }
+            case 'priceHigh':
+                return { priceVnd: 'desc' }
+            case 'priceLow':
+                return { priceVnd: 'asc' }
+            case 'oldest':
+            default:
+                return { submittedAt: 'asc' }
         }
     }
 

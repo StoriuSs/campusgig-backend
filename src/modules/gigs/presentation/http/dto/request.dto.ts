@@ -40,7 +40,7 @@ export class CreateGigRequestDto {
     description!: string
 
     @IsInt()
-    @Min(10_000)
+    @Min(1_000)
     @Max(50_000_000)
     priceVnd!: number
 
@@ -71,7 +71,7 @@ export class UpdateGigRequestDto {
     @IsOptional() @IsString() @MinLength(10) @MaxLength(100) title?: string
     @IsOptional() @IsString() categoryId?: string
     @IsOptional() @IsString() @MinLength(30) @MaxLength(5000) description?: string
-    @IsOptional() @IsInt() @Min(10_000) @Max(50_000_000) priceVnd?: number
+    @IsOptional() @IsInt() @Min(1_000) @Max(50_000_000) priceVnd?: number
     @IsOptional() @IsInt() @Min(1) @Max(30) deliveryDays?: number
 
     @IsOptional()

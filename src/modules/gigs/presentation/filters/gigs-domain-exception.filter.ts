@@ -12,7 +12,8 @@ import {
     ImageNotOwnedException,
     AdminCannotCreateGigException,
     CategoryNotFoundForGigException,
-    GigLockedForReviewException
+    GigLockedForReviewException,
+    GigNotPendingException
 } from '@/modules/gigs/domain'
 
 @Catch(
@@ -24,7 +25,8 @@ import {
     ImageNotOwnedException,
     AdminCannotCreateGigException,
     CategoryNotFoundForGigException,
-    GigLockedForReviewException
+    GigLockedForReviewException,
+    GigNotPendingException
 )
 export class GigsDomainExceptionFilter implements ExceptionFilter {
     constructor(private readonly logger: PinoLogger) {}
@@ -143,6 +145,14 @@ export class GigsDomainExceptionFilter implements ExceptionFilter {
                 status: HttpStatus.CONFLICT,
                 code: ERROR_CODES.GIG_LOCKED_FOR_REVIEW,
                 type: ERROR_TYPES.GIG_LOCKED_FOR_REVIEW,
+                message: exception.message
+            }
+        }
+        if (exception instanceof GigNotPendingException) {
+            return {
+                status: HttpStatus.CONFLICT,
+                code: ERROR_CODES.GIG_NOT_PENDING,
+                type: ERROR_TYPES.GIG_NOT_PENDING,
                 message: exception.message
             }
         }
