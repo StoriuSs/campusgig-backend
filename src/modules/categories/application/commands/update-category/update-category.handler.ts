@@ -1,4 +1,4 @@
-import { CommandHandler, ICommandHandler } from '@nestjs/cqrs'
+import { CommandHandler, ICommandHandler, EventBus } from '@nestjs/cqrs'
 import { Inject, BadRequestException } from '@nestjs/common'
 import { UpdateCategoryCommand } from './update-category.command'
 import {
@@ -10,13 +10,17 @@ import {
     InvalidCategoryIconException,
     isValidCategoryIcon
 } from '@/modules/categories/domain'
+import { CategoryUpdatedEvent } from '../../events/category-updated.event'
 
 const MAX_NAME_LENGTH = 50
 const MAX_DESCRIPTION_LENGTH = 200
 
 @CommandHandler(UpdateCategoryCommand)
 export class UpdateCategoryHandler implements ICommandHandler<UpdateCategoryCommand> {
-    constructor(@Inject(CATEGORY_REPOSITORY_PORT) private readonly categoryRepo: CategoryRepositoryPort) {}
+    constructor(
+        @Inject(CATEGORY_REPOSITORY_PORT) private readonly categoryRepo: CategoryRepositoryPort,
+        private readonly eventBus: EventBus
+    ) {}
 
     async execute(command: UpdateCategoryCommand): Promise<CategoryEntity> {
         const existing = await this.categoryRepo.findById(command.id)
@@ -64,6 +68,8 @@ export class UpdateCategoryHandler implements ICommandHandler<UpdateCategoryComm
             return existing
         }
 
-        return this.categoryRepo.update(command.id, patch)
+        const updated = await this.categoryRepo.update(command.id, patch)
+        this.eventBus.publish(new CategoryUpdatedEvent(updated.id))
+        return updated
     }
 }

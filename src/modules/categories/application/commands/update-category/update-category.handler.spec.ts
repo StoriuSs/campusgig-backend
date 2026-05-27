@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { BadRequestException } from '@nestjs/common'
+import { EventBus } from '@nestjs/cqrs'
 import { UpdateCategoryHandler } from './update-category.handler'
 import { UpdateCategoryCommand } from './update-category.command'
 import {
@@ -32,8 +33,14 @@ describe('UpdateCategoryHandler', () => {
             update: jest.fn()
         }
 
+        const mockEventBus = { publish: jest.fn() }
+
         const module: TestingModule = await Test.createTestingModule({
-            providers: [UpdateCategoryHandler, { provide: CATEGORY_REPOSITORY_PORT, useValue: mockRepo }]
+            providers: [
+                UpdateCategoryHandler,
+                { provide: CATEGORY_REPOSITORY_PORT, useValue: mockRepo },
+                { provide: EventBus, useValue: mockEventBus }
+            ]
         }).compile()
 
         handler = module.get<UpdateCategoryHandler>(UpdateCategoryHandler)

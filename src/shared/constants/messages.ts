@@ -96,6 +96,24 @@ export const MESSAGES = {
         DELETED: 'Category deleted successfully'
     },
 
+    // Gig messages (Feature 04)
+    GIG: {
+        LIST_FETCHED: 'Gigs retrieved successfully',
+        FETCHED: 'Gig retrieved successfully',
+        CREATED: 'Gig submitted for review',
+        UPDATED: 'Gig updated successfully',
+        PAUSED: 'Gig paused',
+        RESUMED: 'Gig resumed',
+        DELETED: 'Gig deleted',
+        IMAGE_UPLOADED: 'Image uploaded successfully',
+        IMAGE_DELETED: 'Image deleted',
+        IMAGES_REORDERED: 'Images reordered',
+        // Admin Gig Queue (Feature 05)
+        QUEUE_FETCHED: 'Gig queue retrieved successfully',
+        APPROVED: 'Gig approved',
+        REJECTED: 'Gig rejected'
+    },
+
     // Health messages
     HEALTH: {
         CHECK_SUCCESS: 'Health check successful',

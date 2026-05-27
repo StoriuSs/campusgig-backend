@@ -105,6 +105,32 @@ export class UploadService {
     }
 
     /**
+     * Upload a gig image with automatic processing (resize to max 1600×1200,
+     * convert to WebP, strip EXIF). Reuses the portfolio image processing
+     * pipeline — same constraints, different S3 subdirectory.
+     */
+    async uploadGigImage(file: Express.Multer.File, uploaderId: string): Promise<UploadedFile> {
+        const buffer = file.buffer || (await this.getFileBuffer(file))
+        const processed = await this.imageProcessingService.processPortfolioImage(buffer)
+
+        const uploaded = await this.storageService.uploadBuffer(
+            processed.buffer,
+            `gig.${processed.format}`,
+            `image/${processed.format}`,
+            {
+                subDirectory: 'gigs',
+                filenamePrefix: `gig-${uploaderId}`
+            }
+        )
+
+        return {
+            ...uploaded,
+            width: processed.width,
+            height: processed.height
+        }
+    }
+
+    /**
      * Delete a file from storage
      */
     async deleteFile(filePath: string): Promise<void> {

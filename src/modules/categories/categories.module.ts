@@ -6,21 +6,28 @@ import {
     CreateCategoryHandler,
     UpdateCategoryHandler,
     DeleteCategoryHandler,
-    ListCategoriesHandler
+    ListCategoriesHandler,
+    ListAllCategoriesHandler,
+    InvalidatePublicCategoriesCacheHandler
 } from './application'
 import { PrismaCategoryRepository } from './infrastructure'
-import { CategoriesController } from './presentation'
+import { CategoriesController, PublicCategoriesController } from './presentation'
 
 const CommandHandlers = [CreateCategoryHandler, UpdateCategoryHandler, DeleteCategoryHandler]
-const QueryHandlers = [ListCategoriesHandler]
+const QueryHandlers = [ListCategoriesHandler, ListAllCategoriesHandler]
+const EventHandlers = [InvalidatePublicCategoriesCacheHandler]
 
 @Module({
     imports: [CqrsModule],
-    controllers: [CategoriesController],
+    controllers: [CategoriesController, PublicCategoriesController],
     providers: [
         { provide: CATEGORY_REPOSITORY_PORT, useClass: PrismaCategoryRepository },
         ...CommandHandlers,
-        ...QueryHandlers
-    ]
+        ...QueryHandlers,
+        ...EventHandlers
+    ],
+    // Exported so cross-module callers (e.g. GigsModule's CreateGigHandler /
+    // UpdateGigHandler) can inject CATEGORY_REPOSITORY_PORT.
+    exports: [CATEGORY_REPOSITORY_PORT]
 })
 export class CategoriesModule {}

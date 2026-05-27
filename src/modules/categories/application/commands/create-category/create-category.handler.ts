@@ -1,4 +1,4 @@
-import { CommandHandler, ICommandHandler } from '@nestjs/cqrs'
+import { CommandHandler, ICommandHandler, EventBus } from '@nestjs/cqrs'
 import { Inject, BadRequestException } from '@nestjs/common'
 import { CreateCategoryCommand } from './create-category.command'
 import {
@@ -9,13 +9,17 @@ import {
     InvalidCategoryIconException,
     isValidCategoryIcon
 } from '@/modules/categories/domain'
+import { CategoryCreatedEvent } from '../../events/category-created.event'
 
 const MAX_NAME_LENGTH = 50
 const MAX_DESCRIPTION_LENGTH = 200
 
 @CommandHandler(CreateCategoryCommand)
 export class CreateCategoryHandler implements ICommandHandler<CreateCategoryCommand> {
-    constructor(@Inject(CATEGORY_REPOSITORY_PORT) private readonly categoryRepo: CategoryRepositoryPort) {}
+    constructor(
+        @Inject(CATEGORY_REPOSITORY_PORT) private readonly categoryRepo: CategoryRepositoryPort,
+        private readonly eventBus: EventBus
+    ) {}
 
     async execute(command: CreateCategoryCommand): Promise<CategoryEntity> {
         const name = command.name.trim()
@@ -38,11 +42,14 @@ export class CreateCategoryHandler implements ICommandHandler<CreateCategoryComm
             throw new DuplicateCategoryNameException(name)
         }
 
-        return this.categoryRepo.create({
+        const created = await this.categoryRepo.create({
             name,
             icon: command.icon,
             description,
             createdById: command.actorId
         })
+
+        this.eventBus.publish(new CategoryCreatedEvent(created.id))
+        return created
     }
 }

@@ -32,6 +32,13 @@ export interface CategoryRepositoryPort {
     listPaginated(opts: { page: number; pageSize: number }): Promise<CategoryListResult>
 
     /**
+     * All categories, alphabetical, no pagination, no derived counts.
+     * Used by the public read endpoint (consumed by sellers in Feature 04
+     * Create Gig dropdown and by buyers in Feature 06 Browse).
+     */
+    findAll(): Promise<CategoryEntity[]>
+
+    /**
      * Count gigs assigned to a given category. Returns 0 in Feature 03 because
      * the Gig table doesn't exist yet — implementation can defensively return
      * 0 until Feature 04 wires this against the real `gig` model.
