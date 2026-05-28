@@ -34,6 +34,9 @@ model User {
   skills         UserSkill[]
   portfolioItems PortfolioItem[]
 
+  // Relations (Feature 06)
+  savedGigs SavedGig[]
+
   @@index([keycloakId])
   @@index([username])
   // @@index([email])

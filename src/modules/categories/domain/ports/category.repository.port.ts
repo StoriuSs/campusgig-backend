@@ -39,6 +39,12 @@ export interface CategoryRepositoryPort {
     findAll(): Promise<CategoryEntity[]>
 
     /**
+     * All categories with the count of Active (non-deleted) gigs per category.
+     * Used by Feature 06 public categories list and Browse categories page.
+     */
+    findAllWithGigCount(): Promise<Array<CategoryEntity & { activeGigCount: number }>>
+
+    /**
      * Count gigs assigned to a given category. Returns 0 in Feature 03 because
      * the Gig table doesn't exist yet — implementation can defensively return
      * 0 until Feature 04 wires this against the real `gig` model.

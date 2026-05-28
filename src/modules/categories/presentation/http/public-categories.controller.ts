@@ -8,7 +8,7 @@ import { ServiceResponse, createResponse } from '@/shared/types'
 import { MESSAGES, RESPONSE_CODES, RESPONSE_TYPES } from '@/shared/constants'
 import { validateAndTransform } from '@/shared/utils'
 
-import { ListAllCategoriesQuery } from '@/modules/categories/application'
+import { ListAllCategoriesWithCountQuery } from '@/modules/categories/application'
 import { CategoryEntity } from '@/modules/categories/domain'
 import { PublicCategoryListResponseDto, PublicCategoryResponseDto } from './dto'
 
@@ -16,6 +16,7 @@ import { PublicCategoryListResponseDto, PublicCategoryResponseDto } from './dto'
  * Public read endpoint for categories. Used by Feature 04 Create Gig dropdown
  * and Feature 06 Browse. Cached with a 10-minute TTL — Category mutations in
  * the admin controller emit events that invalidate this cache.
+ * F06: response now includes activeGigCount per category.
  */
 const CACHE_KEY = 'categories:public:all'
 const CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutes
@@ -48,7 +49,9 @@ export class PublicCategoriesController {
         }
 
         if (!items) {
-            const entities: CategoryEntity[] = await this.queryBus.execute(new ListAllCategoriesQuery())
+            const entities: Array<CategoryEntity & { activeGigCount: number }> = await this.queryBus.execute(
+                new ListAllCategoriesWithCountQuery()
+            )
             items = entities.map((e) => this.toDto(e))
             try {
                 await this.cache.set(CACHE_KEY, items, CACHE_TTL_MS)
@@ -67,11 +70,13 @@ export class PublicCategoriesController {
         )
     }
 
-    private toDto(entity: CategoryEntity): PublicCategoryResponseDto {
+    private toDto(entity: CategoryEntity & { activeGigCount?: number }): PublicCategoryResponseDto {
         return validateAndTransform(PublicCategoryResponseDto, {
             id: entity.id,
             name: entity.name,
-            icon: entity.icon
+            icon: entity.icon,
+            description: entity.description ?? null,
+            activeGigCount: entity.activeGigCount ?? 0
         })
     }
 }

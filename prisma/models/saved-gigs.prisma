@@ -1,0 +1,16 @@
+// Feature 06 — Wishlist / Saved Gigs.
+// A user can "heart" any Active gig to save it for later.
+// Unique on (userId, gigId) — duplicate saves are idempotent.
+model SavedGig {
+  id      String   @id @default(uuid())
+  userId  String
+  gigId   String
+  savedAt DateTime @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gig  Gig  @relation(fields: [gigId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, gigId])
+  @@index([userId, savedAt(sort: Desc)])
+  @@index([gigId])
+}

@@ -8,6 +8,8 @@ export * from './queries/list-categories/list-categories.query'
 export * from './queries/list-categories/list-categories.handler'
 export * from './queries/list-all-categories/list-all-categories.query'
 export * from './queries/list-all-categories/list-all-categories.handler'
+export * from './queries/list-all-categories-with-count/list-all-categories-with-count.query'
+export * from './queries/list-all-categories-with-count/list-all-categories-with-count.handler'
 
 // Feature 04 — domain events emitted by category mutations.
 // Used by the public-list cache invalidation handler in the categories module

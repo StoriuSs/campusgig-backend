@@ -17,4 +17,7 @@ model Category {
   createdById String? // Admin user who created this. Nullable for resilience if that admin is later deleted.
 
   @@index([name])
+
+  // Back-relation (Feature 06 — enables _count aggregate for activeGigCount)
+  gigs Gig[]
 }

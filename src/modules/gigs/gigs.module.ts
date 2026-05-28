@@ -49,6 +49,7 @@ const QueryHandlers = [ListMyGigsHandler, GetMyGigByIdHandler, ListAdminGigQueue
         { provide: GIG_STORAGE_PORT, useClass: GigStorageAdapter },
         ...CommandHandlers,
         ...QueryHandlers
-    ]
+    ],
+    exports: [GIG_STORAGE_PORT]
 })
 export class GigsModule {}

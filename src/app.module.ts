@@ -54,6 +54,8 @@ import { UsersModule } from '@/modules/users/users.module'
 import { UsersDomainExceptionFilter } from '@/modules/users/presentation'
 import { CategoriesModule } from '@/modules/categories/categories.module'
 import { GigsModule } from '@/modules/gigs/gigs.module'
+import { PublicGigsModule } from '@/modules/public-gigs/public-gigs.module'
+import { WishlistModule } from '@/modules/wishlist/wishlist.module'
 
 // Guards
 import { KeycloakAuthGuard } from '@/shared/infrastructure'
@@ -157,7 +159,9 @@ import { RolesGuard } from '@/shared/infrastructure'
         // Feature modules (Hexagonal Architecture)
         UsersModule,
         CategoriesModule,
-        GigsModule
+        GigsModule,
+        PublicGigsModule,
+        WishlistModule
     ],
     providers: [
         // Global authentication guard (all routes protected by default)

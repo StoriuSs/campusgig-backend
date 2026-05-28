@@ -8,13 +8,14 @@ import {
     DeleteCategoryHandler,
     ListCategoriesHandler,
     ListAllCategoriesHandler,
+    ListAllCategoriesWithCountHandler,
     InvalidatePublicCategoriesCacheHandler
 } from './application'
 import { PrismaCategoryRepository } from './infrastructure'
 import { CategoriesController, PublicCategoriesController } from './presentation'
 
 const CommandHandlers = [CreateCategoryHandler, UpdateCategoryHandler, DeleteCategoryHandler]
-const QueryHandlers = [ListCategoriesHandler, ListAllCategoriesHandler]
+const QueryHandlers = [ListCategoriesHandler, ListAllCategoriesHandler, ListAllCategoriesWithCountHandler]
 const EventHandlers = [InvalidatePublicCategoriesCacheHandler]
 
 @Module({
