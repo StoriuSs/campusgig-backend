@@ -95,7 +95,7 @@ export class UsersController {
         const portfolioItems = await this.resolvePortfolioItems(bundle.portfolioItems)
 
         const profile = validateAndTransform(UserProfileResponseDto, {
-            id: user.id,
+            id: bundle.user.id,
             email: user.email,
             username: bundle.user.username ?? user.username,
             displayName: bundle.user.displayName ?? user.name,

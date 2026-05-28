@@ -65,17 +65,25 @@ export class WishlistController {
     @ApiOperation({ summary: 'List saved gigs (wishlist)' })
     @ApiQuery({ name: 'page', required: false, type: Number })
     @ApiQuery({ name: 'pageSize', required: false, type: Number })
+    @ApiQuery({ name: 'sort', required: false, enum: ['savedAt', 'priceAsc', 'priceDesc'] })
     @ApiResponse({ status: 200, type: WishlistResponseDto })
     async list(
         @CurrentUser() user: AuthenticatedKeycloakUser,
         @Query('page') page?: string,
-        @Query('pageSize') pageSize?: string
+        @Query('pageSize') pageSize?: string,
+        @Query('sort') sort?: string
     ): Promise<ServiceResponse<WishlistResponseDto>> {
         const parsedPage = Number.parseInt(page ?? '1', 10) || 1
         const parsedPageSize = Math.min(Number.parseInt(pageSize ?? '20', 10) || 20, 50)
+        const validSort =
+            sort === 'priceAsc'
+                ? ('priceAsc' as const)
+                : sort === 'priceDesc'
+                  ? ('priceDesc' as const)
+                  : ('savedAt' as const)
 
         const result: GetWishlistResult = await this.queryBus.execute(
-            new GetWishlistQuery(user.local.dbId, parsedPage, parsedPageSize)
+            new GetWishlistQuery(user.local.dbId, parsedPage, parsedPageSize, validSort)
         )
 
         const items: WishlistGigItemDto[] = await Promise.all(result.items.map((item) => this.toItemDto(item)))

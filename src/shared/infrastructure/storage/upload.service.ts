@@ -162,8 +162,14 @@ export class UploadService {
      * Get a time-limited signed URL for reading a private file. See
      * IStorageService.getSignedReadUrl for full semantics. Use this for
      * any object stored in a private bucket; raw S3 URLs return 403.
+     *
+     * Passthrough for absolute http(s) URLs: some columns (seeded data, future
+     * external image sources) store a full URL where an S3 object key would
+     * normally go. Signing those would produce a broken bucket URL, so we
+     * return them as-is.
      */
     async getSignedReadUrl(filePath: string, options?: SignedUrlOptions): Promise<string> {
+        if (/^https?:\/\//i.test(filePath)) return filePath
         return this.storageService.getSignedReadUrl(filePath, options)
     }
 

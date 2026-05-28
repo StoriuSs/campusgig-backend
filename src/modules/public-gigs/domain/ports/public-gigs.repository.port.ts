@@ -80,7 +80,8 @@ export interface BrowseGigsFilters {
     minRating?: number
     maxDelivery?: number
     endorsedOnly?: boolean
-    sort: 'newest' | 'rating'
+    sellerId?: string
+    sort: 'newest' | 'rating' | 'priceAsc' | 'priceDesc'
     page: number
     pageSize: number
     userId?: string

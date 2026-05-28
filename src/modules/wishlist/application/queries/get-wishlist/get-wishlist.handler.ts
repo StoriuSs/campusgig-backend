@@ -12,6 +12,6 @@ export class GetWishlistHandler implements IQueryHandler<GetWishlistQuery> {
     constructor(@Inject(WISHLIST_REPOSITORY_PORT) private readonly repo: WishlistRepositoryPort) {}
 
     async execute(query: GetWishlistQuery): Promise<GetWishlistResult> {
-        return this.repo.list(query.userId, query.page, query.pageSize)
+        return this.repo.list(query.userId, query.page, query.pageSize, query.sort)
     }
 }

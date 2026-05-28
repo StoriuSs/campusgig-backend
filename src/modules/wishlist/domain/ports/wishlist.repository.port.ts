@@ -25,8 +25,10 @@ export interface GetWishlistResult {
     pageSize: number
 }
 
+export type WishlistSort = 'savedAt' | 'priceAsc' | 'priceDesc'
+
 export interface WishlistRepositoryPort {
     save(userId: string, gigId: string): Promise<void>
     unsave(userId: string, gigId: string): Promise<void>
-    list(userId: string, page: number, pageSize: number): Promise<GetWishlistResult>
+    list(userId: string, page: number, pageSize: number, sort: WishlistSort): Promise<GetWishlistResult>
 }

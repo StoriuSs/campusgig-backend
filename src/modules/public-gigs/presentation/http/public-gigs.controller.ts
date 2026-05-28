@@ -54,6 +54,7 @@ export class PublicGigsController {
     @ApiQuery({ name: 'maxPrice', required: false, type: Number })
     @ApiQuery({ name: 'maxDelivery', required: false, type: Number })
     @ApiQuery({ name: 'endorsedOnly', required: false, type: Boolean })
+    @ApiQuery({ name: 'sellerId', required: false })
     @ApiQuery({ name: 'sort', required: false, enum: ['newest', 'rating', 'priceAsc', 'priceDesc'] })
     @ApiQuery({ name: 'page', required: false, type: Number })
     @ApiQuery({ name: 'pageSize', required: false, type: Number })
@@ -66,6 +67,7 @@ export class PublicGigsController {
         @Query('maxPrice') maxPrice?: string,
         @Query('maxDelivery') maxDelivery?: string,
         @Query('endorsedOnly') endorsedOnly?: string,
+        @Query('sellerId') sellerId?: string,
         @Query('sort') sort?: string,
         @Query('page') page?: string,
         @Query('pageSize') pageSize?: string
@@ -89,12 +91,20 @@ export class PublicGigsController {
             maxPrice: parsedMaxPrice,
             maxDelivery: parsedMaxDelivery,
             endorsedOnly: parsedEndorsedOnly,
+            sellerId,
             sort,
             page: parsedPage,
             pageSize: parsedPageSize
         })}`
 
-        const validSort = sort === 'rating' ? 'rating' : 'newest'
+        const validSort =
+            sort === 'priceAsc'
+                ? ('priceAsc' as const)
+                : sort === 'priceDesc'
+                  ? ('priceDesc' as const)
+                  : sort === 'rating'
+                    ? ('rating' as const)
+                    : ('newest' as const)
         const cached = await this.cache.get<BrowseGigsResult>(cacheKey)
         const result: BrowseGigsResult =
             cached ??
@@ -106,6 +116,7 @@ export class PublicGigsController {
                     maxPrice: parsedMaxPrice,
                     maxDelivery: parsedMaxDelivery,
                     endorsedOnly: parsedEndorsedOnly,
+                    sellerId,
                     sort: validSort,
                     page: parsedPage,
                     pageSize: parsedPageSize,

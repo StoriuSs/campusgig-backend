@@ -15,7 +15,8 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
     constructor(private readonly prisma: PrismaService) {}
 
     async browse(filters: BrowseGigsFilters): Promise<BrowseGigsResult> {
-        const { q, categoryId, minPrice, maxPrice, maxDelivery, endorsedOnly, sort, page, pageSize, userId } = filters
+        const { q, categoryId, minPrice, maxPrice, maxDelivery, endorsedOnly, sellerId, sort, page, pageSize, userId } =
+            filters
         const skip = (page - 1) * pageSize
 
         // Base where clause — only Active, non-deleted gigs
@@ -36,6 +37,8 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
             where.sellerId = { in: endorsedUsers.map((u) => u.id) }
         }
 
+        if (sellerId) where.sellerId = sellerId
+
         // Full-text search: match title or description (case-insensitive)
         if (q && q.trim()) {
             const term = q.trim()
@@ -45,7 +48,12 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
             ]
         }
 
-        const orderBy = sort === 'rating' ? [{ createdAt: 'desc' as const }] : [{ createdAt: 'desc' as const }]
+        const orderBy =
+            sort === 'priceAsc'
+                ? [{ priceVnd: 'asc' as const }]
+                : sort === 'priceDesc'
+                  ? [{ priceVnd: 'desc' as const }]
+                  : [{ createdAt: 'desc' as const }]
 
         const [rows, total] = await this.prisma.$transaction([
             this.prisma.gig.findMany({
@@ -139,13 +147,13 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
             this.prisma.gig.findMany({
                 where: { categoryId: row.categoryId, status: 'Active', deletedAt: null, id: { not: id } },
                 orderBy: { createdAt: 'desc' },
-                take: 4,
+                take: 6,
                 include: { images: { where: { position: 0 }, take: 1 } }
             }),
             this.prisma.gig.findMany({
                 where: { sellerId: row.sellerId, status: 'Active', deletedAt: null, id: { not: id } },
                 orderBy: { createdAt: 'desc' },
-                take: 4,
+                take: 6,
                 include: { images: { where: { position: 0 }, take: 1 } }
             })
         ])

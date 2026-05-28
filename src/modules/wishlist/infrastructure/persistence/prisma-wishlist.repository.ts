@@ -1,6 +1,11 @@
 import { Injectable, BadRequestException } from '@nestjs/common'
 import { PrismaService } from '@/shared/infrastructure'
-import { WishlistRepositoryPort, GetWishlistResult, WishlistGigItem } from '../../domain/ports/wishlist.repository.port'
+import {
+    WishlistRepositoryPort,
+    GetWishlistResult,
+    WishlistGigItem,
+    WishlistSort
+} from '../../domain/ports/wishlist.repository.port'
 
 @Injectable()
 export class PrismaWishlistRepository implements WishlistRepositoryPort {
@@ -24,13 +29,20 @@ export class PrismaWishlistRepository implements WishlistRepositoryPort {
         await this.prisma.savedGig.deleteMany({ where: { userId, gigId } })
     }
 
-    async list(userId: string, page: number, pageSize: number): Promise<GetWishlistResult> {
+    async list(userId: string, page: number, pageSize: number, sort: WishlistSort): Promise<GetWishlistResult> {
         const skip = (page - 1) * pageSize
+
+        const orderBy =
+            sort === 'priceAsc'
+                ? [{ gig: { priceVnd: 'asc' as const } }]
+                : sort === 'priceDesc'
+                  ? [{ gig: { priceVnd: 'desc' as const } }]
+                  : [{ savedAt: 'desc' as const }]
 
         const [savedRows, total] = await this.prisma.$transaction([
             this.prisma.savedGig.findMany({
                 where: { userId, gig: { status: 'Active', deletedAt: null } },
-                orderBy: { savedAt: 'desc' },
+                orderBy,
                 skip,
                 take: pageSize,
                 include: {
