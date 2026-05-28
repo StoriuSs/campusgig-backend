@@ -1,5 +1,5 @@
 import { Exclude, Expose, Type } from 'class-transformer'
-import { IsArray, IsString, MaxLength, ValidateNested } from 'class-validator'
+import { IsArray, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator'
 
 @Exclude()
 export class PublicCategoryResponseDto {
@@ -16,6 +16,16 @@ export class PublicCategoryResponseDto {
     @IsString()
     @MaxLength(40)
     icon!: string
+
+    @Expose()
+    @IsOptional()
+    @IsString()
+    description!: string | null
+
+    @Expose()
+    @IsInt()
+    @Min(0)
+    activeGigCount!: number
 }
 
 @Exclude()

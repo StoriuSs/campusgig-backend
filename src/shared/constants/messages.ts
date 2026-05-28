@@ -111,7 +111,17 @@ export const MESSAGES = {
         // Admin Gig Queue (Feature 05)
         QUEUE_FETCHED: 'Gig queue retrieved successfully',
         APPROVED: 'Gig approved',
-        REJECTED: 'Gig rejected'
+        REJECTED: 'Gig rejected',
+        // Public Gigs (Feature 06)
+        BROWSE_FETCHED: 'Gigs browsed successfully',
+        PUBLIC_FETCHED: 'Gig details retrieved successfully'
+    },
+
+    // Wishlist messages (Feature 06)
+    WISHLIST: {
+        SAVED: 'Gig saved to wishlist',
+        UNSAVED: 'Gig removed from wishlist',
+        FETCHED: 'Wishlist retrieved successfully'
     },
 
     // Health messages

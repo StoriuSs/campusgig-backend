@@ -105,4 +105,21 @@ export class PrismaCategoryRepository implements CategoryRepositoryPort {
         //   await this.prisma.gig.updateMany({ where: { categoryId: _fromCategoryId }, data: { categoryId: _toCategoryId } })
         return
     }
+
+    async findAllWithGigCount(): Promise<Array<CategoryEntity & { activeGigCount: number }>> {
+        const rows = await this.prisma.category.findMany({
+            orderBy: { name: 'asc' },
+            include: {
+                _count: {
+                    select: {
+                        gigs: { where: { status: 'Active', deletedAt: null } }
+                    }
+                }
+            }
+        })
+        return rows.map((row) => ({
+            ...CategoryMapper.toDomain(row),
+            activeGigCount: row._count.gigs
+        }))
+    }
 }

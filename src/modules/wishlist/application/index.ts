@@ -1,0 +1,6 @@
+export * from './commands/save-gig/save-gig.command'
+export * from './commands/save-gig/save-gig.handler'
+export * from './commands/unsave-gig/unsave-gig.command'
+export * from './commands/unsave-gig/unsave-gig.handler'
+export * from './queries/get-wishlist/get-wishlist.query'
+export * from './queries/get-wishlist/get-wishlist.handler'

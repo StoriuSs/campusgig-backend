@@ -31,9 +31,13 @@ model Gig {
   deletedBy String?
 
   // Relations
-  images  GigImage[]
-  bullets GigBullet[]
-  faqs    GigFaq[]
+  images   GigImage[]
+  bullets  GigBullet[]
+  faqs     GigFaq[]
+  savedBy  SavedGig[]
+
+  // Explicit relation to Category (enables _count aggregate for F06 activeGigCount)
+  category Category @relation(fields: [categoryId], references: [id])
 
   @@index([sellerId])
   @@index([sellerId, status])
