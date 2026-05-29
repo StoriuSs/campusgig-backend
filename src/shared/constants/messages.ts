@@ -124,6 +124,21 @@ export const MESSAGES = {
         FETCHED: 'Wishlist retrieved successfully'
     },
 
+    // Wallet + Withdrawals messages (Feature 07 + 13)
+    WALLET: {
+        FETCHED: 'Wallet retrieved successfully',
+        TRANSACTIONS_FETCHED: 'Transactions retrieved successfully',
+        DEPOSITED: 'Deposit completed',
+        WITHDRAW_REQUESTED: 'Withdrawal request submitted',
+        BANK_ACCOUNT_UPDATED: 'Bank account updated'
+    },
+    ADMIN_WITHDRAWALS: {
+        LISTED: 'Withdrawals retrieved successfully',
+        FETCHED: 'Withdrawal retrieved successfully',
+        APPROVED: 'Withdrawal approved',
+        REJECTED: 'Withdrawal rejected'
+    },
+
     // Health messages
     HEALTH: {
         CHECK_SUCCESS: 'Health check successful',

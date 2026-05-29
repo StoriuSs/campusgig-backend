@@ -369,6 +369,20 @@ interface SeededUser {
     displayName: string
 }
 
+const VIETNAMESE_BANKS = ['Vietcombank', 'BIDV', 'Techcombank', 'ACB', 'Sacombank']
+
+const WALLET_BALANCE_DIST = [
+    { value: { min: 0, max: 0 }, weight: 0.3 }, // empty wallet
+    { value: { min: 50_000, max: 500_000 }, weight: 0.5 },
+    { value: { min: 500_000, max: 2_000_000 }, weight: 0.2 }
+]
+
+function randomAccountNumber(): string {
+    let s = ''
+    for (let i = 0; i < 10; i++) s += String(faker.number.int({ min: 0, max: 9 }))
+    return s
+}
+
 async function seedUsers(): Promise<SeededUser[]> {
     console.log('  → creating 140 users…')
     const users: SeededUser[] = []
@@ -382,6 +396,11 @@ async function seedUsers(): Promise<SeededUser[]> {
 
         const skillCount = faker.number.int({ min: 3, max: 6 })
         const skills = pickN(SKILL_BANK, skillCount)
+
+        // Wallet (Feature 07): random balance + 30% chance of a bank account on file.
+        const balanceRange = weightedPick(WALLET_BALANCE_DIST)
+        const walletBalance = faker.number.int(balanceRange)
+        const hasBank = faker.number.float({ min: 0, max: 1 }) < 0.3
 
         const created = await prisma.user.create({
             data: {
@@ -398,6 +417,10 @@ async function seedUsers(): Promise<SeededUser[]> {
                 endorsedAt: endorsed ? faker.date.recent({ days: 180 }) : null,
                 endorsedBy: endorsed ? 'seed-admin' : null,
                 isAdmin: false,
+                walletBalance,
+                bankName: hasBank ? pick(VIETNAMESE_BANKS) : null,
+                bankAccountNumber: hasBank ? randomAccountNumber() : null,
+                bankAccountHolder: hasBank ? displayName.toUpperCase() : null,
                 skills: {
                     create: skills.map((name, position) => ({ name, position }))
                 }
@@ -567,6 +590,183 @@ async function seedSavedGigs(users: SeededUser[], gigs: SeededGig[]): Promise<vo
     console.log(`  ✓ ${savedCount} saves created`)
 }
 
+// ── 5. Wallet transactions + withdrawals (Feature 07 + 13) ─────────────────
+
+const REJECT_REASONS = [
+    'InvalidAccount',
+    'SuspiciousActivity',
+    'InsufficientDocumentation',
+    'PolicyViolation',
+    'Other'
+] as const
+
+const REJECT_REASON_LABELS: Record<(typeof REJECT_REASONS)[number], string> = {
+    InvalidAccount: 'Invalid account',
+    SuspiciousActivity: 'Suspicious activity',
+    InsufficientDocumentation: 'Insufficient documentation',
+    PolicyViolation: 'Policy violation',
+    Other: 'Other'
+}
+
+const REJECT_NOTES = [
+    'The bank account number provided does not match the account holder name. Please update your bank details and try again.',
+    'Account information appears to be incorrect. Please verify and resubmit.',
+    'Unable to process withdrawal at this time. Please contact support if you believe this is an error.'
+]
+
+async function seedWalletExtras(users: SeededUser[]): Promise<void> {
+    console.log('  → seeding wallet transactions + withdrawals…')
+    let txCount = 0
+    let pendingCount = 0
+    let processedCount = 0
+
+    // Re-fetch users with bank-account info so we know who can withdraw.
+    const fullUsers = await prisma.user.findMany({
+        where: { id: { in: users.map((u) => u.id) } },
+        select: {
+            id: true,
+            walletBalance: true,
+            bankName: true,
+            bankAccountNumber: true,
+            bankAccountHolder: true
+        }
+    })
+
+    for (const user of fullUsers) {
+        // 5% chance: 1-3 historical Deposit transactions in the last 30 days.
+        if (faker.number.float({ min: 0, max: 1 }) < 0.05) {
+            const n = faker.number.int({ min: 1, max: 3 })
+            for (let i = 0; i < n; i++) {
+                const amount = faker.number.int({ min: 100_000, max: 500_000 })
+                await prisma.transaction.create({
+                    data: {
+                        userId: user.id,
+                        type: 'Deposit',
+                        direction: 'Incoming',
+                        status: 'Completed',
+                        amountVnd: amount,
+                        // Seed approximation — real balance-after history isn't tracked
+                        // for historical rows; the user's current balance is a stand-in.
+                        balanceAfterVnd: user.walletBalance,
+                        description: 'Deposited to wallet',
+                        createdAt: faker.date.recent({ days: 30 })
+                    }
+                })
+                txCount++
+            }
+        }
+
+        // Only users with a bank account can have withdrawals.
+        if (!user.bankName || !user.bankAccountNumber || !user.bankAccountHolder) continue
+
+        const last4 = user.bankAccountNumber.slice(-4)
+
+        // 2% chance: a Pending withdrawal — visible in admin queue for demos.
+        // Requires walletBalance >= minimum.
+        if (faker.number.float({ min: 0, max: 1 }) < 0.02 && user.walletBalance >= 100_000) {
+            const amount = faker.number.int({
+                min: 100_000,
+                max: Math.min(user.walletBalance, 800_000)
+            })
+            const requestedAt = faker.date.recent({ days: 5 })
+
+            const request = await prisma.withdrawalRequest.create({
+                data: {
+                    userId: user.id,
+                    amountVnd: amount,
+                    bankNameSnapshot: user.bankName,
+                    bankAccountNumberSnapshot: user.bankAccountNumber,
+                    bankAccountHolderSnapshot: user.bankAccountHolder,
+                    availableBalanceSnapshot: user.walletBalance,
+                    status: 'Pending',
+                    requestedAt
+                }
+            })
+            await prisma.transaction.create({
+                data: {
+                    userId: user.id,
+                    type: 'Withdrawal',
+                    direction: 'Outgoing',
+                    status: 'Pending',
+                    amountVnd: amount,
+                    balanceAfterVnd: user.walletBalance - amount,
+                    withdrawalRequestId: request.id,
+                    description: `To Bank Account · ····${last4} · awaiting admin approval`,
+                    createdAt: requestedAt
+                }
+            })
+            // Move from wallet to pending bucket.
+            await prisma.user.update({
+                where: { id: user.id },
+                data: {
+                    walletBalance: { decrement: amount },
+                    pendingWithdrawalBalance: { increment: amount }
+                }
+            })
+            pendingCount++
+        }
+
+        // 5% chance: a historical Completed or Rejected withdrawal.
+        if (faker.number.float({ min: 0, max: 1 }) < 0.05) {
+            const completed = faker.number.float({ min: 0, max: 1 }) < 0.7
+            const amount = faker.number.int({ min: 100_000, max: 800_000 })
+            const requestedAt = faker.date.recent({ days: 25 })
+            const processedAt = new Date(requestedAt.getTime() + faker.number.int({ min: 1, max: 48 }) * 3600_000)
+
+            const request = await prisma.withdrawalRequest.create({
+                data: {
+                    userId: user.id,
+                    amountVnd: amount,
+                    bankNameSnapshot: user.bankName,
+                    bankAccountNumberSnapshot: user.bankAccountNumber,
+                    bankAccountHolderSnapshot: user.bankAccountHolder,
+                    availableBalanceSnapshot: user.walletBalance + amount,
+                    status: completed ? 'Completed' : 'Rejected',
+                    requestedAt,
+                    processedAt,
+                    rejectionReason: completed
+                        ? null
+                        : (pick(REJECT_REASONS as unknown as string[]) as (typeof REJECT_REASONS)[number]),
+                    rejectionNote: completed ? null : pick(REJECT_NOTES)
+                }
+            })
+
+            const txDescription = completed
+                ? `To Bank Account · ····${last4}`
+                : `Withdrawal rejected — ${REJECT_REASON_LABELS[request.rejectionReason!]}\n${request.rejectionNote}`
+
+            // Completed: snapshot − amount (money is gone).
+            // Rejected: snapshot (money was restored to the user's wallet).
+            const balanceAfterForSeed = completed
+                ? request.availableBalanceSnapshot - amount
+                : request.availableBalanceSnapshot
+
+            await prisma.transaction.create({
+                data: {
+                    userId: user.id,
+                    type: 'Withdrawal',
+                    direction: 'Outgoing',
+                    status: completed ? 'Completed' : 'Rejected',
+                    amountVnd: amount,
+                    balanceAfterVnd: balanceAfterForSeed,
+                    withdrawalRequestId: request.id,
+                    description: txDescription,
+                    createdAt: processedAt
+                }
+            })
+            // Note: for Completed, money already "left" — we don't touch user balance
+            // here (the seed user's walletBalance was set independently above; this is
+            // historical and doesn't affect current state).
+            // For Rejected, same — historical, no balance touch.
+            processedCount++
+        }
+    }
+
+    console.log(
+        `  ✓ ${txCount} historical deposits, ${pendingCount} pending withdrawals, ${processedCount} processed withdrawals`
+    )
+}
+
 // ── Cleanup (SEED_FORCE) ───────────────────────────────────────────────────
 
 async function cleanupSeedData(): Promise<void> {
@@ -584,6 +784,7 @@ async function cleanupSeedData(): Promise<void> {
         return
     }
 
+    // Transactions + WithdrawalRequests cascade via User.onDelete:Cascade.
     await prisma.savedGig.deleteMany({ where: { userId: { in: seedUserIds } } })
     await prisma.gig.deleteMany({ where: { sellerId: { in: seedUserIds } } })
     await prisma.user.deleteMany({ where: { id: { in: seedUserIds } } })
@@ -610,6 +811,7 @@ async function main(): Promise<void> {
     const users = await seedUsers()
     const gigs = await seedGigs(users, categoryIds)
     await seedSavedGigs(users, gigs)
+    await seedWalletExtras(users)
 
     const elapsed = ((Date.now() - start) / 1000).toFixed(1)
     console.log(`✅ Seed complete in ${elapsed}s`)

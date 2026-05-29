@@ -25,6 +25,21 @@ model User {
   // Filter buyer/seller queries with `WHERE isAdmin = false` to keep admin records out of Browse, etc.
   isAdmin Boolean @default(false)
 
+  // Wallet (Feature 07) — all VND, integer-only. walletBalance is the withdrawable
+  // amount. pendingWithdrawalBalance holds money requested but not yet processed
+  // by an admin. escrowBalance holds money for active outgoing orders (buyer side;
+  // populated by F09–10). Invariant: balance + pending + escrow conserved across
+  // all operations.
+  walletBalance            Int @default(0)
+  escrowBalance            Int @default(0)
+  pendingWithdrawalBalance Int @default(0)
+
+  // Withdrawal target — set once during first withdraw, editable afterwards
+  // (blocked while a Pending withdrawal exists). Single bank account per user in v1.
+  bankName          String?
+  bankAccountNumber String?
+  bankAccountHolder String?
+
   createdAt DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)
@@ -36,6 +51,11 @@ model User {
 
   // Relations (Feature 06)
   savedGigs SavedGig[]
+
+  // Relations (Feature 07)
+  transactions         Transaction[]
+  withdrawalRequests   WithdrawalRequest[] @relation("WithdrawalRequester")
+  processedWithdrawals WithdrawalRequest[] @relation("WithdrawalProcessor")
 
   @@index([keycloakId])
   @@index([username])

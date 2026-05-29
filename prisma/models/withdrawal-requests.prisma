@@ -1,0 +1,51 @@
+// Feature 13 — Withdrawal requests + admin approval.
+//
+// On submit, the user's walletBalance moves into pendingWithdrawalBalance,
+// a WithdrawalRequest row is created with Pending status, and a matching
+// Transaction row is inserted (1:1 via withdrawalRequestId UNIQUE).
+//
+// Admin approves → balance leaves pendingWithdrawalBalance, Transaction
+// flips to Completed.
+// Admin rejects → balance restored to walletBalance, Transaction flips
+// to Rejected with reason + note. Same row, no new transactions.
+//
+// Bank account fields are snapshotted at request time so editing the User's
+// bank account later doesn't retroactively rewrite history.
+
+enum WithdrawalStatus {
+  Pending
+  Completed
+  Rejected
+}
+
+enum WithdrawalRejectionReason {
+  InvalidAccount
+  SuspiciousActivity
+  InsufficientDocumentation
+  PolicyViolation
+  Other
+}
+
+model WithdrawalRequest {
+  id                        String                     @id @default(uuid())
+  userId                    String
+  amountVnd                 Int
+  bankNameSnapshot          String
+  bankAccountNumberSnapshot String
+  bankAccountHolderSnapshot String
+  availableBalanceSnapshot  Int                        // walletBalance + amountVnd at submit
+  status                    WithdrawalStatus           @default(Pending)
+  rejectionReason           WithdrawalRejectionReason?
+  rejectionNote             String?
+  processedByUserId         String?
+
+  requestedAt DateTime  @default(now()) @db.Timestamptz(6)
+  processedAt DateTime? @db.Timestamptz(6)
+
+  user            User         @relation("WithdrawalRequester", fields: [userId], references: [id], onDelete: Cascade)
+  processedByUser User?        @relation("WithdrawalProcessor", fields: [processedByUserId], references: [id], onDelete: SetNull)
+  transaction     Transaction?
+
+  @@index([status, requestedAt(sort: Desc)])
+  @@index([userId, requestedAt(sort: Desc)])
+}
