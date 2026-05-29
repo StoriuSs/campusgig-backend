@@ -1,0 +1,36 @@
+// Feature 08 — Messaging.
+//
+// One thread per pair of users, keyed on (userAId, userBId) where the pair is
+// normalized so userAId < userBId lexicographically. This gives a single
+// composite unique index rather than two-row "membership" pairs. Bi-directional
+// lookups read both columns.
+//
+// `lastMessageAt` is denormalized for sidebar conversation-list ordering — it
+// is updated in the SAME Prisma $transaction as the Message insert so reorder
+// is always consistent. Null only for the brief window between thread creation
+// and first message (e.g. when a thread is auto-created on "Contact me" before
+// the first message is sent).
+//
+// The thread is the unit of conversation between two people FOREVER. Pre-order
+// DMs, mid-order messages, post-completion follow-ups — all in this one row.
+// Order Workspace (F10/F11) filters messages by `orderId` for the per-order
+// view; Inbox shows the full chronological history.
+
+model MessageThread {
+  id            String    @id @default(uuid())
+  userAId       String // Lexicographically smaller of the two participant ids.
+  userBId       String // Lexicographically larger of the two participant ids.
+  lastMessageAt DateTime? @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6)
+
+  userA       User                @relation("ThreadUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB       User                @relation("ThreadUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  messages    Message[]
+  readCursors MessageReadCursor[]
+
+  // Unique pair — `createOrGetThread` always normalizes A < B before lookup.
+  @@unique([userAId, userBId])
+  // Sidebar list: "give me my threads ordered by recency" — one index per side.
+  @@index([userAId, lastMessageAt(sort: Desc)])
+  @@index([userBId, lastMessageAt(sort: Desc)])
+}

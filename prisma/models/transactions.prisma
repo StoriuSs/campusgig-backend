@@ -40,7 +40,7 @@ model Transaction {
   // after" in the wallet detail modal. For a Pending withdrawal this is the
   // post-decrement value; on Reject it's overwritten with the restored balance.
   balanceAfterVnd     Int?
-  orderId             String?              // F09–10 populates this for Payment/Earning/Refund
+  orderId             String? // F09–10 populates this for Payment/Earning/Refund
   withdrawalRequestId String?              @unique // 1:1 link to WithdrawalRequest
   description         String
 

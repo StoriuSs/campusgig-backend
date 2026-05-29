@@ -1,0 +1,30 @@
+// Feature 08 — File attachments on chat messages.
+//
+// `key` is the S3 object key (e.g. "messages/{threadId}/{uuid}-{name}.pdf").
+// The presentation layer resolves it to a short-lived presigned GET URL on
+// read — clients never see raw keys.
+//
+// Attachments are staged-then-committed. On file picker submit the frontend
+// calls POST /messages/threads/:id/attachments which creates rows with
+// `messageId = null` (staged). On Send, the SendMessage handler claims those
+// staged rows by setting `messageId` to the new message id, all inside one
+// $transaction. Orphaned staged rows are tolerated in v1 (no sweeper).
+//
+// Limits enforced at the application layer (see UploadAttachmentCommand):
+//   - max 5 attachments per single Send
+//   - max 10MB per file
+//   - allowlist: jpg/png/webp/gif/pdf/docx/xlsx/txt/zip
+
+model MessageAttachment {
+  id        String   @id @default(uuid())
+  messageId String? // Null while staged (before Send commits the message).
+  key       String // S3 object key.
+  name      String // Original filename, preserved for display.
+  size      Int // Bytes.
+  mime      String // image/jpeg, application/pdf, etc.
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  message Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+}
