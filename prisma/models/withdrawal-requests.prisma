@@ -33,7 +33,7 @@ model WithdrawalRequest {
   bankNameSnapshot          String
   bankAccountNumberSnapshot String
   bankAccountHolderSnapshot String
-  availableBalanceSnapshot  Int                        // walletBalance + amountVnd at submit
+  availableBalanceSnapshot  Int // walletBalance + amountVnd at submit
   status                    WithdrawalStatus           @default(Pending)
   rejectionReason           WithdrawalRejectionReason?
   rejectionNote             String?

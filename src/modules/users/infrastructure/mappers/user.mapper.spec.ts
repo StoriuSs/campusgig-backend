@@ -27,6 +27,7 @@ describe('UserMapper', () => {
         bankName: null,
         bankAccountNumber: null,
         bankAccountHolder: null,
+        lastSeenAt: null,
         createdAt: now,
         updatedAt: now,
         deletedAt: null,

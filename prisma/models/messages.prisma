@@ -1,0 +1,40 @@
+// Feature 08 — Messages within a thread.
+//
+// `senderId` is nullable because the unified-thread architecture also stores
+// "system events" (Order Workspace lifecycle events like "Order placed",
+// "Files delivered", "Funds released"). System events have senderId = null.
+// F08 ships user-sent messages only; F10/F11 (Order Workspace) emit the
+// system events using the same table.
+//
+// `orderId` is nullable because pre-order and post-completion messages have
+// no order context. The Inbox query filters `senderId IS NOT NULL` to exclude
+// system events; the Order Workspace query filters `orderId = ?` to scope to
+// the current order. Same table, two views.
+//
+// `body` is nullable only when the message has attachments — every message
+// must have body OR attachments OR be a system event (validated at the
+// application layer).
+//
+// Read state is NOT per-message. See MessageReadCursor — one cursor per
+// (thread, user) pair so opening a thread with N unread messages is a single
+// upsert instead of N row updates.
+
+model Message {
+  id        String   @id @default(uuid())
+  threadId  String
+  senderId  String? // null = system event (Order Workspace, future).
+  body      String? // null only when attachments exist.
+  orderId   String? // null = inbox message (not tagged to a specific order).
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  thread      MessageThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender      User?               @relation("MessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+  attachments MessageAttachment[]
+
+  // Chat scroll + sidebar preview: latest-first within a thread.
+  @@index([threadId, createdAt(sort: Desc)])
+  // Inbox view: user-sent only (senderId NOT NULL).
+  @@index([threadId, senderId, createdAt])
+  // Order Workspace view (future): scope to a specific order.
+  @@index([threadId, orderId, createdAt])
+}

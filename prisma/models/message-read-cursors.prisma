@@ -1,0 +1,38 @@
+// Feature 08 — Per-thread, per-user read cursor.
+//
+// Instead of writing N "readAt" columns when a user opens a thread with N
+// unread messages, we keep ONE cursor row per (threadId, userId). A message
+// `m` is considered "read" by user `u` when:
+//
+//   m.threadId == cursor.threadId
+//   AND cursor.userId == u
+//   AND m.createdAt <= cursor.lastReadAt
+//
+// `lastReadMessageId` is denormalized for quick "what was the last thing they
+// saw" lookups but the source of truth for the read check is `lastReadAt`.
+// Multi-tab race is fine because the cursor only moves forward and the
+// timestamp is idempotent under last-writer-wins.
+//
+// Unread count for the header badge:
+//   SELECT COUNT(*) FROM Message m
+//   JOIN MessageThread t ON m.threadId = t.id
+//   LEFT JOIN MessageReadCursor c
+//     ON c.threadId = m.threadId AND c.userId = $userId
+//   WHERE (t.userAId = $userId OR t.userBId = $userId)
+//     AND m.senderId IS NOT NULL
+//     AND m.senderId != $userId
+//     AND (c.lastReadAt IS NULL OR m.createdAt > c.lastReadAt)
+
+model MessageReadCursor {
+  id                String   @id @default(uuid())
+  threadId          String
+  userId            String
+  lastReadMessageId String? // Denormalized "last message seen" for quick UI lookups.
+  lastReadAt        DateTime @default(now()) @db.Timestamptz(6)
+
+  thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // One cursor per (thread, user) pair.
+  @@unique([threadId, userId])
+}

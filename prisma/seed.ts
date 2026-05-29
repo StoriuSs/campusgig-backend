@@ -767,6 +767,170 @@ async function seedWalletExtras(users: SeededUser[]): Promise<void> {
     )
 }
 
+// ── 6. Messaging (Feature 08) ──────────────────────────────────────────────
+
+const MESSAGE_BODIES = [
+    'Hey! I saw your gig — can you help me?',
+    'Sure! What kind of project are you working on?',
+    "I'd need this done by next week. Possible?",
+    'Yeah totally, that timeline works for me.',
+    'Awesome, just placed the order!',
+    'Got it, will start tonight.',
+    'Quick question — what file format do you need?',
+    'PDF is fine, but PNG works too if you have it.',
+    'Sounds good, talk soon!',
+    'Just sent over the first draft, let me know what you think.',
+    'Looks great. Could you adjust the color palette?',
+    "Sure, I'll send v2 in a bit.",
+    'Thanks for the quick turnaround!',
+    'Anytime, looking forward to working with you again.',
+    'Hey, do you have availability next month?',
+    'Yes! Pencil me in for the 15th.'
+]
+
+const SAMPLE_IMAGE_KEYS = [
+    'picsum:https://picsum.photos/seed/chat-doc-1/600/400',
+    'picsum:https://picsum.photos/seed/chat-doc-2/600/400',
+    'picsum:https://picsum.photos/seed/chat-doc-3/600/400',
+    'picsum:https://picsum.photos/seed/chat-doc-4/600/400'
+]
+
+async function seedMessages(users: SeededUser[]): Promise<void> {
+    console.log('  → seeding message threads + messages…')
+
+    let threadCount = 0
+    let messageCount = 0
+    let attachmentCount = 0
+    let unreadCount = 0
+
+    // Pick 3-7 peers per user (within seeded population). Normalize pair to
+    // (userAId < userBId) so the unique index doesn't reject a duplicate.
+    const createdPairs = new Set<string>()
+    const now = Date.now()
+
+    // First 3 seeded users serve as "demo accounts" — their threads have a
+    // chance of carrying unread messages so the badge shows something
+    // interesting after seed runs.
+    const demoUserIds = new Set(users.slice(0, 3).map((u) => u.id))
+
+    for (const user of users) {
+        const peerCount = faker.number.int({ min: 3, max: 7 })
+        const peers = faker.helpers.arrayElements(
+            users.filter((u) => u.id !== user.id),
+            peerCount
+        )
+
+        for (const peer of peers) {
+            const [a, b] = user.id < peer.id ? [user, peer] : [peer, user]
+            const key = `${a.id}:${b.id}`
+            if (createdPairs.has(key)) continue
+            createdPairs.add(key)
+
+            const messageCountInThread = faker.number.int({ min: 5, max: 15 })
+            const messages: Array<{
+                body: string
+                senderId: string
+                createdAt: Date
+                attachments: Array<{ key: string; name: string; size: number; mime: string }>
+            }> = []
+
+            // Walk backwards from "now" so the first message in the array is
+            // the OLDEST. We'll insert in order and set lastMessageAt to the
+            // latest.
+            let cursor = now - faker.number.int({ min: 60_000, max: 14 * 24 * 3600_000 })
+            for (let i = 0; i < messageCountInThread; i++) {
+                const sender = faker.helpers.arrayElement([a, b])
+                const body = faker.helpers.arrayElement(MESSAGE_BODIES)
+                cursor += faker.number.int({ min: 30_000, max: 3 * 3600_000 })
+                const hasAttachment = faker.number.float({ min: 0, max: 1 }) < 0.18
+                const attachments = hasAttachment
+                    ? [
+                          {
+                              key: faker.helpers.arrayElement(SAMPLE_IMAGE_KEYS),
+                              name: `attachment-${faker.string.alphanumeric(6)}.jpg`,
+                              size: faker.number.int({ min: 50_000, max: 800_000 }),
+                              mime: 'image/jpeg'
+                          }
+                      ]
+                    : []
+                messages.push({
+                    body,
+                    senderId: sender.id,
+                    createdAt: new Date(cursor),
+                    attachments
+                })
+            }
+
+            // Create the thread.
+            const thread = await prisma.messageThread.create({
+                data: {
+                    userAId: a.id,
+                    userBId: b.id,
+                    lastMessageAt: messages[messages.length - 1].createdAt
+                }
+            })
+            threadCount++
+
+            // Insert messages + attachments in chronological order.
+            for (const m of messages) {
+                const created = await prisma.message.create({
+                    data: {
+                        threadId: thread.id,
+                        senderId: m.senderId,
+                        body: m.body,
+                        createdAt: m.createdAt
+                    }
+                })
+                messageCount++
+                for (const att of m.attachments) {
+                    await prisma.messageAttachment.create({
+                        data: {
+                            messageId: created.id,
+                            key: att.key,
+                            name: att.name,
+                            size: att.size,
+                            mime: att.mime,
+                            createdAt: m.createdAt
+                        }
+                    })
+                    attachmentCount++
+                }
+            }
+
+            // Read cursors: by default both sides have seen everything (so
+            // unread counts stay 0). For threads touching a demo account,
+            // leave a chance of unread messages from the OTHER party.
+            const demoSide = demoUserIds.has(a.id) ? a.id : demoUserIds.has(b.id) ? b.id : null
+            const isUnreadThread = demoSide && faker.number.float({ min: 0, max: 1 }) < 0.4
+
+            const latestMessage = messages[messages.length - 1]
+            const cutoffForDemo = isUnreadThread
+                ? messages[Math.max(0, messages.length - 3)].createdAt
+                : latestMessage.createdAt
+
+            for (const userId of [a.id, b.id]) {
+                const isThisDemo = isUnreadThread && userId === demoSide
+                const myCutoff = isThisDemo ? cutoffForDemo : latestMessage.createdAt
+                await prisma.messageReadCursor.create({
+                    data: {
+                        threadId: thread.id,
+                        userId,
+                        lastReadAt: myCutoff
+                    }
+                })
+                if (isThisDemo) {
+                    const unreadMsgs = messages.filter((m) => m.senderId !== userId && m.createdAt > myCutoff)
+                    unreadCount += unreadMsgs.length
+                }
+            }
+        }
+    }
+
+    console.log(
+        `  ✓ ${threadCount} threads, ${messageCount} messages, ${attachmentCount} attachments (${unreadCount} unread for demo accounts)`
+    )
+}
+
 // ── Cleanup (SEED_FORCE) ───────────────────────────────────────────────────
 
 async function cleanupSeedData(): Promise<void> {
@@ -785,6 +949,22 @@ async function cleanupSeedData(): Promise<void> {
     }
 
     // Transactions + WithdrawalRequests cascade via User.onDelete:Cascade.
+    // Messaging tables ALSO cascade via thread/user FKs, but we explicitly
+    // delete the dependents first so seed runs are deterministic and we
+    // don't depend on cascade ordering for child collections.
+    await prisma.messageAttachment.deleteMany({
+        where: { message: { thread: { OR: [{ userAId: { in: seedUserIds } }, { userBId: { in: seedUserIds } }] } } }
+    })
+    await prisma.message.deleteMany({
+        where: { thread: { OR: [{ userAId: { in: seedUserIds } }, { userBId: { in: seedUserIds } }] } }
+    })
+    await prisma.messageReadCursor.deleteMany({
+        where: { userId: { in: seedUserIds } }
+    })
+    await prisma.messageThread.deleteMany({
+        where: { OR: [{ userAId: { in: seedUserIds } }, { userBId: { in: seedUserIds } }] }
+    })
+
     await prisma.savedGig.deleteMany({ where: { userId: { in: seedUserIds } } })
     await prisma.gig.deleteMany({ where: { sellerId: { in: seedUserIds } } })
     await prisma.user.deleteMany({ where: { id: { in: seedUserIds } } })
@@ -812,6 +992,7 @@ async function main(): Promise<void> {
     const gigs = await seedGigs(users, categoryIds)
     await seedSavedGigs(users, gigs)
     await seedWalletExtras(users)
+    await seedMessages(users)
 
     const elapsed = ((Date.now() - start) / 1000).toFixed(1)
     console.log(`✅ Seed complete in ${elapsed}s`)

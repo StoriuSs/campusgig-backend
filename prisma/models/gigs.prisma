@@ -2,12 +2,12 @@
 // See docs/specs/04-gig-creation-and-lifecycle.spec.md § Schema.
 
 model Gig {
-  id          String @id @default(uuid())
-  sellerId    String // FK to User.id. Filter buyer/seller queries with isAdmin=false.
-  categoryId  String // FK to Category.id.
-  title       String // 10-80 chars (app-enforced)
-  description String // 100-5000 chars (app-enforced)
-  priceVnd    Int // Integer VND, 10_000-50_000_000 (app-enforced)
+  id           String @id @default(uuid())
+  sellerId     String // FK to User.id. Filter buyer/seller queries with isAdmin=false.
+  categoryId   String // FK to Category.id.
+  title        String // 10-80 chars (app-enforced)
+  description  String // 100-5000 chars (app-enforced)
+  priceVnd     Int // Integer VND, 10_000-50_000_000 (app-enforced)
   deliveryDays Int // 1-30 (app-enforced)
 
   // Status: one of Pending / Active / Paused / Rejected / Deleted.
@@ -31,10 +31,10 @@ model Gig {
   deletedBy String?
 
   // Relations
-  images   GigImage[]
-  bullets  GigBullet[]
-  faqs     GigFaq[]
-  savedBy  SavedGig[]
+  images  GigImage[]
+  bullets GigBullet[]
+  faqs    GigFaq[]
+  savedBy SavedGig[]
 
   // Explicit relation to Category (enables _count aggregate for F06 activeGigCount)
   category Category @relation(fields: [categoryId], references: [id])

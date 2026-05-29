@@ -57,6 +57,18 @@ model User {
   withdrawalRequests   WithdrawalRequest[] @relation("WithdrawalRequester")
   processedWithdrawals WithdrawalRequest[] @relation("WithdrawalProcessor")
 
+  // Feature 08 — Messaging. Updated on last socket disconnect; null when never
+  // connected since the column shipped. Frontend renders "Online now" while a
+  // socket is open (real-time via Redis presence SET) and falls back to
+  // "Last seen <ago>" using this column when offline.
+  lastSeenAt DateTime? @db.Timestamptz(6)
+
+  // Relations (Feature 08)
+  sentMessages         Message[]           @relation("MessageSender")
+  threadParticipationA MessageThread[]     @relation("ThreadUserA")
+  threadParticipationB MessageThread[]     @relation("ThreadUserB")
+  messageReadCursors   MessageReadCursor[]
+
   @@index([keycloakId])
   @@index([username])
   // @@index([email])

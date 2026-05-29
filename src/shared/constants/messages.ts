@@ -139,6 +139,20 @@ export const MESSAGES = {
         REJECTED: 'Withdrawal rejected'
     },
 
+    // Messaging messages (Feature 08)
+    MESSAGING: {
+        THREAD_CREATED: 'Conversation ready',
+        CONVERSATIONS_LISTED: 'Conversations retrieved successfully',
+        MESSAGES_LISTED: 'Messages retrieved successfully',
+        MESSAGE_SENT: 'Message sent',
+        ATTACHMENT_UPLOADED: 'Attachment uploaded',
+        THREAD_READ: 'Conversation marked as read',
+        UNREAD_COUNT_FETCHED: 'Unread count retrieved',
+        FILES_LISTED: 'Files retrieved successfully',
+        ATTACHMENT_RESOLVED: 'Download URL ready',
+        RESPONSE_TIME_FETCHED: 'Response time retrieved'
+    },
+
     // Health messages
     HEALTH: {
         CHECK_SUCCESS: 'Health check successful',

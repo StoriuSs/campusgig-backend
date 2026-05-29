@@ -31,6 +31,9 @@ import { STORAGE_SERVICE } from './interfaces/storage.interface'
         ImageProcessingService,
         UploadService
     ],
-    exports: [UploadService, ImageProcessingService, BullModule]
+    // STORAGE_SERVICE exported so feature modules can build thin storage
+    // adapters (e.g. MessagingModule's S3MessageAttachmentAdapter) without
+    // routing every call through UploadService (which is image-flavored).
+    exports: [UploadService, ImageProcessingService, BullModule, STORAGE_SERVICE]
 })
 export class UploadModule {}
