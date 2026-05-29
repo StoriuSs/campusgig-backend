@@ -1,0 +1,54 @@
+// Feature 07 — Wallet transaction history.
+//
+// Every wallet movement gets a Transaction row. The five types map to the
+// five user-facing labels on the Wallet page filter tabs. Withdrawal-type
+// rows are mutated in place across the Pending → Completed / Rejected
+// lifecycle (no separate refund row on reject — same row's status flips).
+//
+// Cross-table invariant: every Transaction insert/update happens INSIDE the
+// same Prisma $transaction as the matching User balance column update. They
+// must be transactional siblings — never one without the other.
+
+enum TransactionType {
+  Deposit
+  Payment
+  Earning
+  Refund
+  Withdrawal
+}
+
+enum TransactionDirection {
+  Incoming
+  Outgoing
+}
+
+enum TransactionStatus {
+  Completed
+  Pending
+  Rejected
+}
+
+model Transaction {
+  id                  String               @id @default(uuid())
+  userId              String
+  type                TransactionType
+  direction           TransactionDirection
+  status              TransactionStatus    @default(Completed)
+  amountVnd           Int
+  // User's walletBalance immediately after this transaction's effect. Null on
+  // historical/seeded rows that pre-date this column. Used to render "Balance
+  // after" in the wallet detail modal. For a Pending withdrawal this is the
+  // post-decrement value; on Reject it's overwritten with the restored balance.
+  balanceAfterVnd     Int?
+  orderId             String?              // F09–10 populates this for Payment/Earning/Refund
+  withdrawalRequestId String?              @unique // 1:1 link to WithdrawalRequest
+  description         String
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  withdrawalRequest WithdrawalRequest? @relation(fields: [withdrawalRequestId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, type, createdAt(sort: Desc)])
+}
