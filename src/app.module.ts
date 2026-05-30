@@ -58,6 +58,7 @@ import { PublicGigsModule } from '@/modules/public-gigs/public-gigs.module'
 import { WishlistModule } from '@/modules/wishlist/wishlist.module'
 import { WalletModule } from '@/modules/wallet/wallet.module'
 import { MessagingModule } from '@/modules/messaging/messaging.module'
+import { OrdersModule } from '@/modules/orders/orders.module'
 
 // Guards
 import { KeycloakAuthGuard } from '@/shared/infrastructure'
@@ -165,7 +166,8 @@ import { RolesGuard } from '@/shared/infrastructure'
         PublicGigsModule,
         WishlistModule,
         WalletModule,
-        MessagingModule
+        MessagingModule,
+        OrdersModule
     ],
     providers: [
         // Global authentication guard (all routes protected by default)

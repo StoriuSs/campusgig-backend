@@ -1,0 +1,78 @@
+// Feature 09 / 10 — Orders. The trust mechanic of CampusGig.
+//
+// One row per order. Snapshot fields (`gig*Snapshot`) are populated at place
+// time so a buyer's order isn't broken when the seller later edits the gig.
+// The internal `id` UUID is the routing handle (`/orders/:id`); the
+// user-facing code is derived from `number` as `'CG-' + padStart(4)`.
+//
+// Deadlines are nullable until the prior step happens — `deliveryDeadline`
+// is set on Accept, `reviewDeadline` on Deliver, `disputeDeadline` on
+// auto-complete. All transitions live behind explicit Prisma $transactions
+// with a status guard; see OrdersRepositoryPort.
+
+enum OrderStatus {
+  PendingReview
+  InProgress
+  Late
+  Delivered
+  AwaitingFinalization
+  Completed
+  Cancelled
+  Frozen // reserved for F11 (Disputes)
+}
+
+model Order {
+  id     String @id @default(uuid())
+  // Postgres SERIAL — monotonic, drives the user-facing `CG-{padStart(4)}`
+  // code at the presentation layer (CG-0001, CG-0042, CG-12345...).
+  number Int    @unique @default(autoincrement())
+
+  buyerId  String
+  sellerId String
+  gigId    String
+
+  // Snapshotted gig fields at place time
+  gigTitleSnapshot    String
+  gigPriceVndSnapshot Int
+  gigDeliveryDays     Int
+  gigCoverKey         String?
+
+  status OrderStatus @default(PendingReview)
+
+  // Lifecycle timestamps
+  placedAt        DateTime  @default(now()) @db.Timestamptz(6)
+  acceptedAt      DateTime? @db.Timestamptz(6)
+  deliveredAt     DateTime? @db.Timestamptz(6)
+  completedAt     DateTime? @db.Timestamptz(6)
+  cancelledAt     DateTime? @db.Timestamptz(6)
+  autoCompletedAt DateTime? @db.Timestamptz(6)
+
+  // Deadlines — exact-hour countdowns from event timestamps
+  acceptDeadline   DateTime? @db.Timestamptz(6) // placedAt + 24h
+  deliveryDeadline DateTime? @db.Timestamptz(6) // acceptedAt + gigDeliveryDays × 24h
+  reviewDeadline   DateTime? @db.Timestamptz(6) // deliveredAt + 72h
+  disputeDeadline  DateTime? @db.Timestamptz(6) // autoCompletedAt + 7×24h
+
+  // Cancellation context — populated when status flips to Cancelled
+  cancelledByUserId  String?
+  cancellationReason String? // free text; for declined, contains the seller's note
+
+  // Relations
+  buyer         User           @relation("OrderBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+  seller        User           @relation("OrderSeller", fields: [sellerId], references: [id], onDelete: Cascade)
+  gig           Gig            @relation(fields: [gigId], references: [id])
+  events        OrderEvent[]
+  deliveries    Delivery[]
+  extensions    Extension[]
+  cancellations Cancellation[]
+
+  // Sidebar + dashboard queries: "give me my orders newest first per status"
+  @@index([buyerId, status, placedAt(sort: Desc)])
+  @@index([sellerId, status, placedAt(sort: Desc)])
+  // BullMQ "what should I sweep" support — only when we drop the queue and
+  // need to re-derive jobs (defensive, not the hot path)
+  @@index([status, acceptDeadline])
+  @@index([status, deliveryDeadline])
+  @@index([status, reviewDeadline])
+  @@index([status, disputeDeadline])
+}

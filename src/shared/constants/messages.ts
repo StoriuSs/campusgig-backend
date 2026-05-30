@@ -153,6 +153,23 @@ export const MESSAGES = {
         RESPONSE_TIME_FETCHED: 'Response time retrieved'
     },
 
+    // Orders messages (Feature 09 + 10)
+    ORDERS: {
+        PLACED: 'Order placed',
+        FETCHED: 'Order retrieved',
+        LISTED: 'Orders retrieved',
+        EVENTS_FETCHED: 'Order events retrieved',
+        ACTION_COUNTS_FETCHED: 'Action-required counts retrieved',
+        ACCEPTED: 'Order accepted',
+        DECLINED: 'Order declined',
+        DELIVERED: 'Delivery sent',
+        DELIVERY_UPDATED: 'Delivery updated',
+        DELIVERIES_LISTED: 'Deliveries retrieved',
+        DELIVERY_FILE_STAGED: 'Delivery file uploaded',
+        DELIVERY_FILE_RESOLVED: 'Download URL ready',
+        DELIVERY_ACCEPTED: 'Delivery accepted'
+    },
+
     // Health messages
     HEALTH: {
         CHECK_SUCCESS: 'Health check successful',

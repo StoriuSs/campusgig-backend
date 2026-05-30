@@ -81,7 +81,16 @@ export interface MessagingRepositoryPort {
     ): Promise<{ items: ConversationListItem[]; total: number }>
 
     // ---- Messages ----
-    listMessages(threadId: string, beforeId: string | null, pageSize: number): Promise<MessageItem[]>
+    // Inbox view (default): senderId NOT NULL filter excludes system events.
+    // Order Workspace view: pass `opts.orderId` to ALSO include system events
+    // (senderId NULL) tied to that order — those render inline as system
+    // event pills via <SystemEventPill /> on the frontend.
+    listMessages(
+        threadId: string,
+        beforeId: string | null,
+        pageSize: number,
+        opts?: { orderId?: string }
+    ): Promise<MessageItem[]>
 
     // Inserts a message + claims the staged attachments (sets their messageId)
     // + updates the thread's lastMessageAt — all in one $transaction.
@@ -93,6 +102,21 @@ export interface MessagingRepositoryPort {
         attachmentIds: string[]
     }): Promise<MessageItem>
 
+    // Inserts a system event message — senderId is null, orderId is required.
+    // body is `JSON.stringify({ type, payload })` so the frontend's
+    // <SystemEventPill /> can pick the right copy + icon tier.
+    // Called from inside the orders module's transition $transactions, with
+    // the same `tx` Prisma client so atomicity is preserved.
+    insertSystemEvent(input: {
+        threadId: string
+        orderId: string
+        type: string
+        payload: Record<string, unknown>
+        at: Date
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tx?: any
+    }): Promise<MessageItem>
+
     getMessageById(messageId: string, viewerId: string): Promise<MessageItem | null>
 
     // ---- Read cursor ----
@@ -101,7 +125,10 @@ export interface MessagingRepositoryPort {
     getUnreadCount(userId: string): Promise<number>
 
     // ---- Files ----
-    listThreadFiles(threadId: string, viewerId: string): Promise<FileItem[]>
+    // When orderId is provided, restricts to attachments on messages tagged
+    // with that order — used by the Order Workspace's Files modal so it
+    // shows only THIS order's files, not the whole inbox history.
+    listThreadFiles(threadId: string, viewerId: string, opts?: { orderId?: string }): Promise<FileItem[]>
 
     // ---- Attachments (staging) ----
     stageAttachment(input: {

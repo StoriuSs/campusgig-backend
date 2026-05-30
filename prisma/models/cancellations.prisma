@@ -1,0 +1,57 @@
+// Feature 09 / 10 — Mutual cancellation requests.
+//
+// Either party may initiate during `InProgress` or `Delivered`. The reason
+// set is role-conditional (see SRS § Request Modals). When the counterparty
+// Accepts, the order flips to `Cancelled` with a full refund via
+// WalletRepositoryPort.refundFromEscrow. Reject or 24h Expiry leaves the
+// order in its current state.
+//
+// `otherText` is required when `reasonCode` ends in `*Other` (validated at
+// the application layer, since Prisma can't express conditional required
+// fields cleanly).
+//
+// At most ONE Pending cancellation per order at a time — same guard pattern
+// as Extension.
+
+enum CancellationStatus {
+  Pending
+  Accepted
+  Rejected
+  Expired
+}
+
+enum CancellationInitiator {
+  Buyer
+  Seller
+}
+
+enum CancellationReasonCode {
+  // Buyer-initiated set
+  BuyerSituationChanged
+  BuyerOrderedByMistake
+  BuyerAgreedInChat
+  BuyerOther
+  // Seller-initiated set
+  SellerScheduleConflict
+  SellerRequirementsMismatch
+  SellerAgreedInChat
+  SellerOther
+}
+
+model Cancellation {
+  id            String                 @id @default(uuid())
+  orderId       String
+  requestedById String
+  initiator     CancellationInitiator
+  reasonCode    CancellationReasonCode
+  otherText     String? // required when reasonCode is *Other
+  status        CancellationStatus     @default(Pending)
+  expiresAt     DateTime               @db.Timestamptz(6) // requestedAt + 24h
+  requestedAt   DateTime               @default(now()) @db.Timestamptz(6)
+  decidedAt     DateTime?              @db.Timestamptz(6)
+  decidedById   String?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, status])
+}

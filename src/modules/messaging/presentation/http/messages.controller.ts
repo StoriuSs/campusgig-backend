@@ -193,12 +193,14 @@ export class MessagesController {
     @ApiOperation({ summary: 'List messages in a thread (newest first, cursor by beforeId)' })
     @ApiQuery({ name: 'beforeId', required: false, type: String })
     @ApiQuery({ name: 'pageSize', required: false, type: Number })
+    @ApiQuery({ name: 'orderId', required: false, type: String })
     @ApiResponse({ status: 200, type: MessageItemResponseDto, isArray: true })
     async listMessages(
         @CurrentUser() user: AuthenticatedKeycloakUser,
         @Param('threadId') threadId: string,
         @Query('beforeId') beforeId?: string,
-        @Query('pageSize') pageSizeParam?: string
+        @Query('pageSize') pageSizeParam?: string,
+        @Query('orderId') orderId?: string
     ): Promise<ServiceResponse<MessageItemResponseDto[]>> {
         const pageSize = Math.min(
             MESSAGES_MAX_PAGE_SIZE,
@@ -206,7 +208,7 @@ export class MessagesController {
         )
 
         const messages: MessageItem[] = await this.queryBus.execute(
-            new GetThreadMessagesQuery(user.local.dbId, threadId, beforeId ?? null, pageSize)
+            new GetThreadMessagesQuery(user.local.dbId, threadId, beforeId ?? null, pageSize, orderId ?? null)
         )
 
         const items = await Promise.all(messages.map((m) => this.toMessageDto(m)))
@@ -229,7 +231,13 @@ export class MessagesController {
         @Body() body: SendMessageRequestDto
     ): Promise<ServiceResponse<MessageItemResponseDto>> {
         const message: MessageItem = await this.commandBus.execute(
-            new SendMessageCommand(user.local.dbId, threadId, body.body ?? null, body.attachmentIds ?? [])
+            new SendMessageCommand(
+                user.local.dbId,
+                threadId,
+                body.body ?? null,
+                body.attachmentIds ?? [],
+                body.orderId ?? null
+            )
         )
 
         const dto = await this.toMessageDto(message)
@@ -415,9 +423,12 @@ export class MessagesController {
     @ApiResponse({ status: 200, type: FileItemResponseDto, isArray: true })
     async listFiles(
         @CurrentUser() user: AuthenticatedKeycloakUser,
-        @Param('threadId') threadId: string
+        @Param('threadId') threadId: string,
+        @Query('orderId') orderId?: string
     ): Promise<ServiceResponse<FileItemResponseDto[]>> {
-        const files: FileItem[] = await this.queryBus.execute(new GetThreadFilesQuery(user.local.dbId, threadId))
+        const files: FileItem[] = await this.queryBus.execute(
+            new GetThreadFilesQuery(user.local.dbId, threadId, orderId ?? null)
+        )
         const items = files.map((f) =>
             validateAndTransform(FileItemResponseDto, {
                 id: f.id,

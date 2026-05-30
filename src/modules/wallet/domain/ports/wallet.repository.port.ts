@@ -138,14 +138,42 @@ export interface WalletRepositoryPort {
         note: string
     ): Promise<WithdrawalRequestItem>
 
-    // ── Service surface for F09–10 Orders (not called yet) ─────────────────
-    moveToEscrow(userId: string, amountVnd: number, orderId: string): Promise<TransactionItem>
+    // ── Service surface for F09–10 Orders ──────────────────────────────────
+    // All three methods accept an optional `tx?: any` Prisma transaction
+    // client so callers (the orders module) can wrap the wallet movement +
+    // the order state flip in a single atomic block. When `tx` is omitted
+    // the method opens its own `$transaction` — the legacy single-call path.
+    moveToEscrow(
+        userId: string,
+        amountVnd: number,
+        orderId: string,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tx?: any
+    ): Promise<TransactionItem>
+
+    // Splits the escrowed amount 80/20 (or per `platformFeePct`) — the seller's
+    // share lands in their `walletBalance` as an Earning Tx, and the
+    // platform's share lands in `platformUserId`'s `walletBalance` as an
+    // Earning Tx (the platform user IS the destination, so from its POV the
+    // fee is also earnings). Integer math: `platformShare = floor(amount *
+    // pct / 100); sellerShare = amount - platformShare;` — 1₫ rounding
+    // favors the seller (the more generous default for a community platform).
     releaseFromEscrow(
         buyerId: string,
         sellerId: string,
+        platformUserId: string,
         amountVnd: number,
         platformFeePct: number,
-        orderId: string
+        orderId: string,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tx?: any
     ): Promise<{ earning: TransactionItem; platformFee: TransactionItem }>
-    refundFromEscrow(buyerId: string, amountVnd: number, orderId: string): Promise<TransactionItem>
+
+    refundFromEscrow(
+        buyerId: string,
+        amountVnd: number,
+        orderId: string,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tx?: any
+    ): Promise<TransactionItem>
 }

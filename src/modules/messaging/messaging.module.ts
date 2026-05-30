@@ -74,7 +74,10 @@ const EventHandlers = [
         ...EventHandlers
     ],
     // Repo port exported so F10/F11 (Order Workspace) can emit system events
-    // through the same MessagingRepository.insertMessage path.
-    exports: [MESSAGING_REPOSITORY_PORT]
+    // through the same MessagingRepository.insertMessage path. SocketEmitter
+    // is exported so the Orders module's event handlers can push order:updated
+    // notifications to both buyer + seller user rooms without spinning up a
+    // second gateway (one /ws namespace per the realtime memory note).
+    exports: [MESSAGING_REPOSITORY_PORT, SocketEmitter]
 })
 export class MessagingModule {}

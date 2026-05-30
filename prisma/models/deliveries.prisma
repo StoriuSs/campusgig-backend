@@ -1,0 +1,44 @@
+// Feature 09 / 10 — Order delivery + delivered files.
+//
+// One `Delivery` per "version" — version 1 on the seller's first Deliver
+// Work, version 2+ on each Update Delivery (M5) while in `Delivered`. Prior
+// versions stay around so the buyer (and admins on dispute) can see what
+// changed; the latest version is whichever row has max(version) for the
+// order.
+//
+// Auto-complete countdown DOES NOT reset on Update Delivery — that's an
+// anti-gaming rule from SRS § Delivery Updates & Versioning. The
+// `reviewDeadline` stays anchored to the FIRST delivery.
+//
+// `DeliveryFile` uses a stage-then-commit pattern (same as
+// MessageAttachment): the upload endpoint inserts rows with
+// `deliveryId = null` and the SendDeliverWork / SendUpdateDelivery command
+// claims them by id inside the order's $transaction.
+
+model Delivery {
+  id          String   @id @default(uuid())
+  orderId     String
+  version     Int // 1 on first deliver, 2+ on each M5 Update
+  note        String // required min 20, max 2000 (validated at app layer)
+  deliveredAt DateTime @default(now()) @db.Timestamptz(6)
+
+  order Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  files DeliveryFile[]
+
+  // "Latest version of this order's deliveries" — index helps O(1) lookups.
+  @@index([orderId, version(sort: Desc)])
+}
+
+model DeliveryFile {
+  id         String   @id @default(uuid())
+  deliveryId String? // null while staged (before SendDeliverWork commits)
+  key        String // S3 object key (deliveries/{orderId}/{deliveryId-or-staged}/{filename})
+  name       String // original filename, preserved for display + Content-Disposition
+  size       Int // bytes
+  mime       String
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  delivery Delivery? @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryId])
+}

@@ -17,6 +17,11 @@ export class GetThreadMessagesHandler implements IQueryHandler<GetThreadMessages
         if (!thread) {
             throw new NotAThreadParticipantException(query.threadId, query.viewerId)
         }
-        return this.repo.listMessages(query.threadId, query.beforeId, query.pageSize)
+        return this.repo.listMessages(
+            query.threadId,
+            query.beforeId,
+            query.pageSize,
+            query.orderId ? { orderId: query.orderId } : undefined
+        )
     }
 }

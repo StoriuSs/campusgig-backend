@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import { PrismaService } from '@/shared/infrastructure'
+import { formatOrderCode } from '@/shared/utils'
 import {
     BankAccountInput,
     DepositResult,
@@ -58,6 +59,14 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
                   availableBalanceSnapshot: tx.withdrawalRequest.availableBalanceSnapshot
               }
             : null
+        // Replace any embedded UUID in the persisted description with the
+        // human-readable order code (CG-XXXX). The repo writes the
+        // description with `${orderId}` baked in (atomic write inside a
+        // transaction), so we patch the display at read time — that way
+        // existing rows pre-format-fix also render the friendly code.
+        const description: string = tx.order
+            ? (tx.description as string).replace(tx.orderId, formatOrderCode(tx.order.number))
+            : tx.description
         return {
             id: tx.id,
             type: tx.type,
@@ -67,7 +76,7 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
             balanceAfterVnd: tx.balanceAfterVnd ?? null,
             orderId: tx.orderId ?? null,
             withdrawalRequestId: tx.withdrawalRequestId ?? null,
-            description: tx.description,
+            description,
             createdAt: tx.createdAt,
             withdrawal
         }
@@ -151,8 +160,28 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
             this.prisma.transaction.count({ where })
         ])
 
+        // Resolve order codes in a single follow-up query — no FK relation
+        // exists on Transaction.orderId so we can't .include(order). Map by
+        // id then patch the description in the mapper. Skipped when no
+        // transaction on this page is order-linked (Deposit/Withdrawal).
+        const orderIds = Array.from(new Set(items.map((t) => t.orderId).filter((id): id is string => !!id)))
+        const orderNumbers: Record<string, number> = {}
+        if (orderIds.length > 0) {
+            const orders = await this.prisma.order.findMany({
+                where: { id: { in: orderIds } },
+                select: { id: true, number: true }
+            })
+            for (const o of orders) orderNumbers[o.id] = o.number
+        }
+
         return {
-            items: items.map((t) => this.toTransaction(t)),
+            items: items.map((t) =>
+                this.toTransaction({
+                    ...t,
+                    order:
+                        t.orderId && orderNumbers[t.orderId] !== undefined ? { number: orderNumbers[t.orderId] } : null
+                })
+            ),
             total,
             page,
             pageSize
@@ -496,10 +525,23 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
     }
 
     // ── Service surface for F09–10 Orders ──────────────────────────────────
+    // Each method accepts an optional `tx?` Prisma transaction client so the
+    // orders module can wrap the wallet movement + the order state flip in
+    // a single atomic block. When `tx` is omitted, we open our own
+    // $transaction — the legacy single-call path.
 
-    async moveToEscrow(userId: string, amountVnd: number, orderId: string): Promise<TransactionItem> {
-        return this.prisma.$transaction(async (tx) => {
-            const user = await tx.user.update({
+    async moveToEscrow(
+        userId: string,
+        amountVnd: number,
+        orderId: string,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tx?: any
+    ): Promise<TransactionItem> {
+        const run = async (
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            client: any
+        ): Promise<TransactionItem> => {
+            const user = await client.user.update({
                 where: { id: userId },
                 data: {
                     walletBalance: { decrement: amountVnd },
@@ -510,7 +552,7 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
             if (user.walletBalance < 0) {
                 throw new BadRequestException('Insufficient balance')
             }
-            const transaction = await tx.transaction.create({
+            const transaction = await client.transaction.create({
                 data: {
                     userId,
                     type: 'Payment',
@@ -523,32 +565,51 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
                 }
             })
             return this.toTransaction(transaction)
-        })
+        }
+        return tx ? run(tx) : this.prisma.$transaction(run)
     }
 
     async releaseFromEscrow(
         buyerId: string,
         sellerId: string,
+        platformUserId: string,
         amountVnd: number,
         platformFeePct: number,
-        orderId: string
+        orderId: string,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tx?: any
     ): Promise<{ earning: TransactionItem; platformFee: TransactionItem }> {
-        return this.prisma.$transaction(async (tx) => {
-            const sellerShare = Math.floor((amountVnd * (100 - platformFeePct)) / 100)
-            const platformShare = amountVnd - sellerShare
+        const run = async (
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            client: any
+        ): Promise<{ earning: TransactionItem; platformFee: TransactionItem }> => {
+            // Integer split — platformShare floored, sellerShare gets the
+            // remainder. 1₫ rounding favors the seller, which is the more
+            // generous default for a community marketplace.
+            const platformShare = Math.floor((amountVnd * platformFeePct) / 100)
+            const sellerShare = amountVnd - platformShare
 
-            const buyerAfter = await tx.user.update({
+            // Pull funds out of the buyer's escrow column.
+            await client.user.update({
                 where: { id: buyerId },
-                data: { escrowBalance: { decrement: amountVnd } },
-                select: { walletBalance: true }
+                data: { escrowBalance: { decrement: amountVnd } }
             })
-            const sellerAfter = await tx.user.update({
+            // Credit the seller's wallet with 80%.
+            const sellerAfter = await client.user.update({
                 where: { id: sellerId },
                 data: { walletBalance: { increment: sellerShare } },
                 select: { walletBalance: true }
             })
+            // Credit the platform user's wallet with 20% — the platform user
+            // owns its own accounting wallet (see project_caching_candidates
+            // memory + the platform-fee-collector seed step).
+            const platformAfter = await client.user.update({
+                where: { id: platformUserId },
+                data: { walletBalance: { increment: platformShare } },
+                select: { walletBalance: true }
+            })
 
-            const earning = await tx.transaction.create({
+            const earning = await client.transaction.create({
                 data: {
                     userId: sellerId,
                     type: 'Earning',
@@ -560,16 +621,21 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
                     description: `Earned from order ${orderId}`
                 }
             })
-            const platformFee = await tx.transaction.create({
+            // Platform fee row lives in the PLATFORM user's transaction
+            // history — semantically: "Earning" from the platform's POV
+            // (it's the destination wallet). No new TransactionType enum
+            // value needed; the wallet filter tabs still apply cleanly when
+            // an admin views the platform user's wallet.
+            const platformFee = await client.transaction.create({
                 data: {
-                    userId: buyerId,
-                    type: 'Payment',
-                    direction: 'Outgoing',
+                    userId: platformUserId,
+                    type: 'Earning',
+                    direction: 'Incoming',
                     status: 'Completed',
                     amountVnd: platformShare,
-                    balanceAfterVnd: buyerAfter.walletBalance,
+                    balanceAfterVnd: platformAfter.walletBalance,
                     orderId,
-                    description: `Platform fee for order ${orderId}`
+                    description: `Platform fee from order ${orderId}`
                 }
             })
 
@@ -577,12 +643,22 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
                 earning: this.toTransaction(earning),
                 platformFee: this.toTransaction(platformFee)
             }
-        })
+        }
+        return tx ? run(tx) : this.prisma.$transaction(run)
     }
 
-    async refundFromEscrow(buyerId: string, amountVnd: number, orderId: string): Promise<TransactionItem> {
-        return this.prisma.$transaction(async (tx) => {
-            const buyerAfter = await tx.user.update({
+    async refundFromEscrow(
+        buyerId: string,
+        amountVnd: number,
+        orderId: string,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tx?: any
+    ): Promise<TransactionItem> {
+        const run = async (
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            client: any
+        ): Promise<TransactionItem> => {
+            const buyerAfter = await client.user.update({
                 where: { id: buyerId },
                 data: {
                     escrowBalance: { decrement: amountVnd },
@@ -590,7 +666,7 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
                 },
                 select: { walletBalance: true }
             })
-            const transaction = await tx.transaction.create({
+            const transaction = await client.transaction.create({
                 data: {
                     userId: buyerId,
                     type: 'Refund',
@@ -603,6 +679,7 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
                 }
             })
             return this.toTransaction(transaction)
-        })
+        }
+        return tx ? run(tx) : this.prisma.$transaction(run)
     }
 }

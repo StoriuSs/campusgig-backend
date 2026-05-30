@@ -973,9 +973,29 @@ async function cleanupSeedData(): Promise<void> {
 
 // ── Main ───────────────────────────────────────────────────────────────────
 
+// Synthetic user that owns the platform's 20% take of every completed order.
+// Idempotent on keycloakId — runs on EVERY seed pass (even the early-return
+// "already seeded" path) so a fresh DB always has the row. Never deleted by
+// cleanupSeedData since its keycloakId doesn't start with `seed-`.
+async function seedPlatformUser(): Promise<void> {
+    await prisma.user.upsert({
+        where: { keycloakId: 'platform-fee-collector' },
+        create: {
+            id: '00000000-0000-0000-0000-000000000001',
+            keycloakId: 'platform-fee-collector',
+            displayName: 'CampusGig Platform',
+            isAdmin: false,
+            hasSetUsername: true
+        },
+        update: {}
+    })
+}
+
 async function main(): Promise<void> {
     console.log('🌱 CampusGig seed starting…')
     const start = Date.now()
+
+    await seedPlatformUser()
 
     const existing = await prisma.user.count({ where: { keycloakId: { startsWith: 'seed-' } } })
     if (existing > 0 && !process.env.SEED_FORCE) {
