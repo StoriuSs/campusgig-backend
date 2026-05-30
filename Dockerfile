@@ -130,8 +130,6 @@ COPY --from=build /app/generated ./generated
 COPY prisma ./prisma
 COPY prisma.config.ts ./
 
-# Copy Swagger docs if needed at runtime
-COPY swagger-docs.yaml ./
 
 # Create uploads directory with correct ownership.
 # (We only chown the writable directories — node_modules stays root-owned
