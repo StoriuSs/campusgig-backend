@@ -17,6 +17,8 @@ export class GetThreadFilesHandler implements IQueryHandler<GetThreadFilesQuery>
         if (!thread) {
             throw new NotAThreadParticipantException(query.threadId, query.viewerId)
         }
-        return this.repo.listThreadFiles(query.threadId, query.viewerId)
+        return this.repo.listThreadFiles(query.threadId, query.viewerId, {
+            orderId: query.orderId ?? undefined
+        })
     }
 }

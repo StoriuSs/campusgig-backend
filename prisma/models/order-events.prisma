@@ -1,0 +1,45 @@
+// Feature 09 / 10 — Order audit log.
+//
+// Every state transition writes one row in the same Prisma $transaction as
+// the Order update + wallet movement + system message insert. The log is
+// both an audit trail for admin debug AND a fallback source for chat
+// system-event regeneration if a thread is ever wiped.
+//
+// `actorUserId` is null for system-driven transitions (AutoCancelled, Late,
+// AutoCompleted, Finalized). `payload` carries small structured context like
+// `{ extensionId, days, reason }`, `{ deliveryId, version }`, etc. Kept as
+// JSON to avoid yet-another column per event variant.
+
+enum OrderEventType {
+  Placed
+  Accepted
+  Declined
+  AutoCancelled
+  Late
+  Delivered
+  DeliveryUpdated
+  ExtensionRequested
+  ExtensionAccepted
+  ExtensionRejected
+  ExtensionExpired
+  CancellationRequested
+  CancellationAccepted
+  CancellationRejected
+  CancellationExpired
+  AcceptDelivery
+  AutoCompleted
+  Finalized
+}
+
+model OrderEvent {
+  id          String         @id @default(uuid())
+  orderId     String
+  type        OrderEventType
+  actorUserId String? // null = system-driven transition
+  payload     Json?
+  createdAt   DateTime       @default(now()) @db.Timestamptz(6)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+}

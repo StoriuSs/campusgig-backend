@@ -192,7 +192,12 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
 
     // ── Messages ───────────────────────────────────────────────────────────
 
-    async listMessages(threadId: string, beforeId: string | null, pageSize: number): Promise<MessageItem[]> {
+    async listMessages(
+        threadId: string,
+        beforeId: string | null,
+        pageSize: number,
+        opts?: { orderId?: string }
+    ): Promise<MessageItem[]> {
         // Cursor: createdAt < $before.createdAt OR (eq AND id < $before.id)
         let beforeRow: { createdAt: Date; id: string } | null = null
         if (beforeId) {
@@ -202,14 +207,81 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
             })
         }
 
+        // Filter strategy:
+        //
+        // • Inbox view (no orderId): show EVERYTHING in the thread — user
+        //   messages AND system events. The frontend already renders
+        //   senderId=null messages as coloured pills, and the order code
+        //   embedded in each pill disambiguates events across multiple
+        //   orders the two parties have. Inbox is the unified view.
+        //
+        // • Order Workspace view (orderId set): the buyer↔seller has one
+        //   thread shared across all their orders. Per spec, any chat
+        //   they exchange WHILE this order is active belongs in the
+        //   order's workspace; once terminal (Completed / Cancelled /
+        //   Frozen) the workspace is read-only history. So:
+        //     - System events with this orderId always show (pinned to
+        //       the order regardless of timing).
+        //     - User messages show if their createdAt is in the active
+        //       window [placedAt, terminalAt or now]. That captures both
+        //       workspace-composer sends AND inbox sends during the
+        //       order's lifetime.
+        //   Frozen state has no explicit timestamp so we treat it like
+        //   "still showing" for v1; refinement would query the latest
+        //   OrderEvent of the frozen-class type.
+        let userMsgWindow: { gte: Date; lte?: Date } | null = null
+        if (opts?.orderId) {
+            const order = await this.prisma.order.findUnique({
+                where: { id: opts.orderId },
+                select: {
+                    placedAt: true,
+                    status: true,
+                    completedAt: true,
+                    cancelledAt: true
+                }
+            })
+            if (!order) return []
+            const terminalAt: Date | null =
+                order.status === 'Completed'
+                    ? order.completedAt
+                    : order.status === 'Cancelled'
+                      ? order.cancelledAt
+                      : null
+            userMsgWindow = {
+                gte: order.placedAt,
+                ...(terminalAt ? { lte: terminalAt } : {})
+            }
+        }
+
+        const scopeFilter = opts?.orderId
+            ? {
+                  OR: [
+                      // System events: must be tagged to this exact order.
+                      { senderId: null, orderId: opts.orderId },
+                      // User messages: any sender, any orderId tag (legacy
+                      // tagged sends still appear); time window narrows the
+                      // set to messages exchanged while the order was live.
+                      {
+                          senderId: { not: null },
+                          createdAt: userMsgWindow as { gte: Date; lte?: Date }
+                      }
+                  ]
+              }
+            : {}
+
         const messages = await this.prisma.message.findMany({
             where: {
                 threadId,
+                ...scopeFilter,
                 ...(beforeRow
                     ? {
-                          OR: [
-                              { createdAt: { lt: beforeRow.createdAt } },
-                              { createdAt: beforeRow.createdAt, id: { lt: beforeRow.id } }
+                          AND: [
+                              {
+                                  OR: [
+                                      { createdAt: { lt: beforeRow.createdAt } },
+                                      { createdAt: beforeRow.createdAt, id: { lt: beforeRow.id } }
+                                  ]
+                              }
                           ]
                       }
                     : {})
@@ -278,6 +350,36 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
         })
 
         return this.toMessage(result, null)
+    }
+
+    async insertSystemEvent(input: {
+        threadId: string
+        orderId: string
+        type: string
+        payload: Record<string, unknown>
+        at: Date
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tx?: any
+    }): Promise<MessageItem> {
+        // Runs inside the order-transition $transaction when `tx` is supplied
+        // — atomic with the Order state flip. Falls back to this.prisma when
+        // called outside a transaction (rare; mostly here for ad-hoc smoke).
+        const client = input.tx ?? this.prisma
+        const body = JSON.stringify({ type: input.type, payload: input.payload })
+
+        const message = await client.message.create({
+            data: {
+                threadId: input.threadId,
+                senderId: null, // system event marker
+                body,
+                orderId: input.orderId,
+                createdAt: input.at
+            }
+        })
+        // System events don't bump the thread's lastMessageAt — that field
+        // drives the Inbox sidebar ordering, which excludes system events
+        // anyway. Leaving lastMessageAt untouched keeps the sidebar honest.
+        return this.toMessage({ ...message, attachments: [] }, null)
     }
 
     async getMessageById(messageId: string, viewerId: string): Promise<MessageItem | null> {
@@ -359,11 +461,13 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
 
     // ── Files ──────────────────────────────────────────────────────────────
 
-    async listThreadFiles(threadId: string, _viewerId: string): Promise<FileItem[]> {
+    async listThreadFiles(threadId: string, _viewerId: string, opts?: { orderId?: string }): Promise<FileItem[]> {
+        const messageWhere: { threadId: string; orderId?: string } = { threadId }
+        if (opts?.orderId) messageWhere.orderId = opts.orderId
         const attachments = await this.prisma.messageAttachment.findMany({
             where: {
                 messageId: { not: null },
-                message: { threadId }
+                message: messageWhere
             },
             include: {
                 message: {

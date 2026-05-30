@@ -69,6 +69,10 @@ model User {
   threadParticipationB MessageThread[]     @relation("ThreadUserB")
   messageReadCursors   MessageReadCursor[]
 
+  // Relations (Feature 09/10)
+  ordersAsBuyer  Order[] @relation("OrderBuyer")
+  ordersAsSeller Order[] @relation("OrderSeller")
+
   @@index([keycloakId])
   @@index([username])
   // @@index([email])

@@ -36,6 +36,9 @@ model Gig {
   faqs    GigFaq[]
   savedBy SavedGig[]
 
+  // Relations (Feature 09/10)
+  orders Order[]
+
   // Explicit relation to Category (enables _count aggregate for F06 activeGigCount)
   category Category @relation(fields: [categoryId], references: [id])
 
