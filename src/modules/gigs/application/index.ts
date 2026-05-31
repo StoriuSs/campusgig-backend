@@ -7,6 +7,8 @@ export * from './queries/list-admin-gig-queue/list-admin-gig-queue.query'
 export * from './queries/list-admin-gig-queue/list-admin-gig-queue.handler'
 export * from './queries/get-admin-gig-by-id/get-admin-gig-by-id.query'
 export * from './queries/get-admin-gig-by-id/get-admin-gig-by-id.handler'
+export * from './queries/get-my-gig-stats/get-my-gig-stats.query'
+export * from './queries/get-my-gig-stats/get-my-gig-stats.handler'
 
 // Commands
 export * from './commands/create-gig/create-gig.command'

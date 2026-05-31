@@ -22,6 +22,11 @@ model User {
   // Set by JIT provisioner on JWT `admin` realm role. Filter buyer/seller queries with isAdmin=false.
   isAdmin Boolean @default(false)
 
+  // F11 rating aggregate (per-seller, across all gigs). Increment-only; reviews are write-once.
+  // avg (1-5) = ratingSumHalfStars / 2 / reviewCount; reviewCount 0 = "New seller".
+  reviewCount        Int @default(0)
+  ratingSumHalfStars Int @default(0)
+
   // Wallet (Feature 07) — all VND, integer-only. walletBalance is the withdrawable
   // amount. pendingWithdrawalBalance holds money requested but not yet processed
   // by an admin. escrowBalance holds money for active outgoing orders (buyer side;
@@ -57,6 +62,8 @@ model User {
   messageReadCursors   MessageReadCursor[]
   ordersAsBuyer  Order[] @relation("OrderBuyer")
   ordersAsSeller Order[] @relation("OrderSeller")
+  sellerReviews  Review[] @relation("SellerReviews")
+  buyerReviews   Review[] @relation("BuyerReviews")
 
   @@index([keycloakId])
   @@index([username])

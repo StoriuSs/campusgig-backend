@@ -27,6 +27,8 @@ export class UserMapper {
             endorsedAt: prismaUser.endorsedAt,
             endorsedBy: prismaUser.endorsedBy,
             isAdmin: prismaUser.isAdmin,
+            reviewCount: prismaUser.reviewCount,
+            ratingSumHalfStars: prismaUser.ratingSumHalfStars,
             createdAt: prismaUser.createdAt,
             updatedAt: prismaUser.updatedAt,
             deletedAt: prismaUser.deletedAt,

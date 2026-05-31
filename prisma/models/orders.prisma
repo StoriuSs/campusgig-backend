@@ -52,6 +52,7 @@ model Order {
   deliveries    Delivery[]
   extensions    Extension[]
   cancellations Cancellation[]
+  review        Review?
 
   @@index([buyerId, status, placedAt(sort: Desc)])
   @@index([sellerId, status, placedAt(sort: Desc)])

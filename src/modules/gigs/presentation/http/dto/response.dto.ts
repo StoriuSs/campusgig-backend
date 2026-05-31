@@ -26,10 +26,7 @@ export class GigFaqDto {
     @Expose() @IsInt() @Min(0) position!: number
 }
 
-/**
- * Compact row shape used on My Gigs list. Stat fields (orders/avgRating/earnings)
- * are 0 / null in Feature 04 — Features 09+ will populate.
- */
+/** Compact row shape for the My Gigs table, including per-gig stat columns. */
 @Exclude()
 export class MyGigListItemDto {
     @Expose() @IsString() id!: string
@@ -46,16 +43,16 @@ export class MyGigListItemDto {
     @Expose() @ApiProperty({ description: 'ISO 8601' }) @IsString() createdAt!: string
 
     @Expose()
-    @ApiProperty({ description: '0 in Feature 04 — Features 09+ will populate.' })
+    @ApiProperty({ description: 'Total orders placed on this gig (all-time)' })
     @IsInt()
     @Min(0)
     ordersCount!: number
     @Expose()
-    @ApiProperty({ description: 'null in Feature 04 (no reviews yet).' })
+    @ApiProperty({ description: 'Per-gig average rating 1-5, null when no reviews', nullable: true })
     @IsOptional()
     avgRating!: number | null
     @Expose()
-    @ApiProperty({ description: '0 in Feature 04.' })
+    @ApiProperty({ description: "Seller's 80% of completed-order snapshots (all-time), VND" })
     @IsInt()
     @Min(0)
     earningsVnd!: number
@@ -122,6 +119,26 @@ export class MyGigDetailDto {
     @ValidateNested({ each: true })
     @Type(() => GigFaqDto)
     faqs!: GigFaqDto[]
+
+    // F11 review count for the Manage Gig tab badge. Views/orders/earnings are
+    // fetched separately (period-scoped) via GET mine/:id/stats.
+    @Expose() @IsInt() reviewCount!: number
+}
+
+/** Period-scoped Performance card metrics (GET mine/:id/stats). */
+@Exclude()
+export class MyGigStatsDto {
+    @Expose() @ApiProperty({ description: 'Gig-detail views in the selected period' }) @IsInt() @Min(0) views!: number
+    @Expose() @ApiProperty({ description: 'Orders placed in the selected period' }) @IsInt() @Min(0) orders!: number
+    @Expose()
+    @ApiProperty({ description: 'Seller earnings (80% of completed-order snapshots) in the period, VND' })
+    @IsInt()
+    @Min(0)
+    earningsVnd!: number
+    @Expose()
+    @ApiProperty({ description: 'orders / views, null when there were no views', nullable: true })
+    @IsOptional()
+    conversion!: number | null
 }
 
 @Exclude()

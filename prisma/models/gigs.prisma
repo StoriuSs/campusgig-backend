@@ -19,6 +19,11 @@ model Gig {
   // Denormalized: id of the GigImage with position=0. Recomputed on insert / delete / reorder.
   coverImageId String?
 
+  // F11 rating aggregate (per-gig). Increment-only — reviews are write-once.
+  // avg (1-5) = ratingSumHalfStars / 2 / reviewCount; reviewCount 0 = "New seller".
+  reviewCount        Int @default(0)
+  ratingSumHalfStars Int @default(0)
+
   submittedAt DateTime? @db.Timestamptz(6)
   approvedAt  DateTime? @db.Timestamptz(6)
   pausedAt    DateTime? @db.Timestamptz(6)
@@ -33,6 +38,8 @@ model Gig {
   faqs    GigFaq[]
   savedBy SavedGig[]
   orders  Order[]
+  reviews Review[]
+  views   GigView[]
 
   // Explicit relation required for _count aggregate (F06 activeGigCount).
   category Category @relation(fields: [categoryId], references: [id])
@@ -42,6 +49,19 @@ model Gig {
   @@index([status])
   @@index([categoryId])
   @@index([deletedAt])
+}
+
+// One row per public gig-detail view (drives the Manage Gig Performance card).
+// No viewerId — the record endpoint is public; owner-exclusion + reload dedup
+// happen client-side.
+model GigView {
+  id        String   @id @default(uuid())
+  gigId     String
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  gig Gig @relation(fields: [gigId], references: [id], onDelete: Cascade)
+
+  @@index([gigId, createdAt])
 }
 
 // Per-gig images. Cascade-deleted with the parent gig (soft-delete on Gig

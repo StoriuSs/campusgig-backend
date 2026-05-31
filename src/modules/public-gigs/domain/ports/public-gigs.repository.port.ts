@@ -99,4 +99,6 @@ export interface BrowseGigsResult {
 export interface PublicGigsRepositoryPort {
     browse(filters: BrowseGigsFilters): Promise<BrowseGigsResult>
     findById(id: string, userId?: string): Promise<PublicGigDetail | null>
+    // Records a gig-detail view (no-op if the gig doesn't exist / isn't Active).
+    recordView(gigId: string): Promise<void>
 }

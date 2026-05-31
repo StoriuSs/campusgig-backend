@@ -13,12 +13,38 @@ export interface GigWithRelations {
     faqs: GigFaqEntity[]
     categoryName: string
     categoryIcon: string
+    // Manage Gig tab badge; only findByIdWithRelations populates it. The
+    // Performance card's views/orders/earnings come from getStats() instead.
+    reviewCount?: number
+}
+
+// ── Manage Gig — Performance card (Feature 11+) ──────────────────────────────
+
+export type GigStatsPeriod = 'thisMonth' | 'lastMonth' | '7d' | '30d' | '90d' | 'all'
+
+/** Half-open date window [gte, lt). Either bound may be omitted ("all"). */
+export interface GigStatsRange {
+    gte?: Date
+    lt?: Date
+}
+
+export interface GigStats {
+    views: number
+    orders: number
+    earningsVnd: number
+    // orders / views, null when there are no views in the window.
+    conversion: number | null
 }
 
 export interface MyGigsListItem {
     gig: GigEntity
     coverImage: GigImageEntity | null
     categoryName: string
+    // Per-gig stat columns shown on the My Gigs table. avgRating is null for a
+    // gig with no reviews; earningsVnd is the seller's 80% of completed orders.
+    ordersCount: number
+    avgRating: number | null
+    earningsVnd: number
 }
 
 export interface MyGigsListResult {
@@ -125,6 +151,8 @@ export interface GigRepositoryPort {
     findByIdWithRelations(id: string): Promise<GigWithRelations | null>
     findMine(filters: MyGigsFilters): Promise<MyGigsListResult>
     countByStatus(sellerId: string): Promise<Record<MyGigsStatusFilter, number>>
+    // Period-scoped Performance card metrics (views/orders/earnings/conversion).
+    getStats(gigId: string, range: GigStatsRange): Promise<GigStats>
 
     // ── Admin Gig Queue (Feature 05) ───────────────────────────────────────
     findForAdminQueue(filters: AdminQueueFilters): Promise<AdminQueueResult>

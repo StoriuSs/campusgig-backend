@@ -1,5 +1,5 @@
 import { Exclude, Expose, Type } from 'class-transformer'
-import { IsIn, IsInt, IsOptional, IsString, Min, ValidateNested } from 'class-validator'
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator'
 
 import { CancellationResponseDto } from './cancellation.response.dto'
 import { DeliveryResponseDto } from './delivery.response.dto'
@@ -17,6 +17,16 @@ const ORDER_STATUSES = [
     'Cancelled',
     'Frozen'
 ] as const
+
+@Exclude()
+export class OrderReviewResponseDto {
+    @Expose() @IsString() id!: string
+    @Expose() @IsNumber() rating!: number
+    @Expose() @IsString() body!: string
+    @Expose() @IsOptional() @IsString() replyBody!: string | null
+    @Expose() @IsOptional() @IsString() repliedAt!: string | null
+    @Expose() @IsString() createdAt!: string
+}
 
 @Exclude()
 export class OrderDetailResponseDto {
@@ -64,4 +74,10 @@ export class OrderDetailResponseDto {
     pendingCancellation!: CancellationResponseDto | null
 
     @Expose() @IsInt() @Min(0) deliveryCount!: number
+
+    @Expose()
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => OrderReviewResponseDto)
+    review!: OrderReviewResponseDto | null
 }

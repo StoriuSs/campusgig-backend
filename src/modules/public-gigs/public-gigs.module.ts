@@ -3,11 +3,17 @@ import { CqrsModule } from '@nestjs/cqrs'
 import { GigsModule } from '@/modules/gigs/gigs.module'
 
 import { PUBLIC_GIGS_REPOSITORY_PORT } from './domain/ports/public-gigs.repository.port'
-import { BrowseGigsHandler, GetPublicGigByIdHandler, InvalidatePublicGigsCacheHandler } from './application'
+import {
+    BrowseGigsHandler,
+    GetPublicGigByIdHandler,
+    RecordGigViewHandler,
+    InvalidatePublicGigsCacheHandler
+} from './application'
 import { PrismaPublicGigsRepository } from './infrastructure/persistence/prisma-public-gigs.repository'
 import { PublicGigsController } from './presentation'
 
 const QueryHandlers = [BrowseGigsHandler, GetPublicGigByIdHandler]
+const CommandHandlers = [RecordGigViewHandler]
 const EventHandlers = [InvalidatePublicGigsCacheHandler]
 
 @Module({
@@ -16,6 +22,7 @@ const EventHandlers = [InvalidatePublicGigsCacheHandler]
     providers: [
         { provide: PUBLIC_GIGS_REPOSITORY_PORT, useClass: PrismaPublicGigsRepository },
         ...QueryHandlers,
+        ...CommandHandlers,
         ...EventHandlers
     ]
 })

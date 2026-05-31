@@ -52,6 +52,7 @@ import { WishlistModule } from '@/modules/wishlist/wishlist.module'
 import { WalletModule } from '@/modules/wallet/wallet.module'
 import { MessagingModule } from '@/modules/messaging/messaging.module'
 import { OrdersModule } from '@/modules/orders/orders.module'
+import { ReviewsModule } from '@/modules/reviews/reviews.module'
 
 import { KeycloakAuthGuard } from '@/shared/infrastructure'
 import { RolesGuard } from '@/shared/infrastructure'
@@ -152,7 +153,8 @@ import { RolesGuard } from '@/shared/infrastructure'
         WishlistModule,
         WalletModule,
         MessagingModule,
-        OrdersModule
+        OrdersModule,
+        ReviewsModule
     ],
     providers: [
         {

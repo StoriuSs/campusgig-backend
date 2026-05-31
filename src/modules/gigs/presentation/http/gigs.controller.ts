@@ -45,6 +45,7 @@ import {
     MyGigsListResponseDto,
     MyGigsCountsDto,
     MyGigDetailDto,
+    MyGigStatsDto,
     UploadGigImageResponseDto,
     UpdateGigResponseDto,
     GigImageDto,
@@ -54,6 +55,7 @@ import {
 import {
     ListMyGigsQuery,
     GetMyGigByIdQuery,
+    GetMyGigStatsQuery,
     CreateGigCommand,
     UpdateGigCommand,
     PauseGigCommand,
@@ -69,11 +71,13 @@ import type { ListMyGigsResult } from '@/modules/gigs/application/queries/list-m
 import {
     GigEntity,
     GigWithRelations,
-    GigImageEntity,
     GigBulletEntity,
     GigFaqEntity,
     MyGigsStatusFilter,
-    MyGigsSort
+    MyGigsSort,
+    MyGigsListItem,
+    GigStats,
+    GigStatsPeriod
 } from '@/modules/gigs/domain'
 import { GigStoragePort, GIG_STORAGE_PORT } from '@/modules/gigs/application/ports'
 import { GigsDomainExceptionFilter } from '../filters/gigs-domain-exception.filter'
@@ -125,9 +129,7 @@ export class GigsController {
             )
         )
 
-        const items: MyGigListItemDto[] = await Promise.all(
-            result.items.map(async (item) => this.toListItemDto(item.gig, item.coverImage, item.categoryName))
-        )
+        const items: MyGigListItemDto[] = await Promise.all(result.items.map((item) => this.toListItemDto(item)))
 
         const dto = validateAndTransform(MyGigsListResponseDto, {
             items,
@@ -164,6 +166,41 @@ export class GigsController {
 
         const dto = await this.toDetailDto(bundle)
         return createResponse(RESPONSE_CODES.GIG_FETCH_SUCCESS, RESPONSE_TYPES.GIG_FETCH, MESSAGES.GIG.FETCHED, dto)
+    }
+
+    @Get('mine/:id/stats')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({
+        summary: 'Get my gig performance stats',
+        description: 'Period-scoped views, orders, earnings, and view→order conversion for the Manage Gig card.'
+    })
+    @ApiParam({ name: 'id', description: 'Gig UUID' })
+    @ApiQuery({ name: 'period', required: false, enum: ['thisMonth', 'lastMonth', '7d', '30d', '90d', 'all'] })
+    @ApiResponse({ status: 200, type: MyGigStatsDto })
+    @ApiResponse({ status: 404, description: 'Gig not found or not owned by caller' })
+    async getMyGigStats(
+        @CurrentUser() user: AuthenticatedKeycloakUser,
+        @Param('id') id: string,
+        @Query('period') period?: string
+    ): Promise<ServiceResponse<MyGigStatsDto>> {
+        this.assertNotAdmin(user)
+
+        const stats: GigStats = await this.queryBus.execute(
+            new GetMyGigStatsQuery(id, user.local.dbId, this.parsePeriod(period))
+        )
+
+        const dto = validateAndTransform(MyGigStatsDto, {
+            views: stats.views,
+            orders: stats.orders,
+            earningsVnd: stats.earningsVnd,
+            conversion: stats.conversion
+        })
+        return createResponse(
+            RESPONSE_CODES.GIG_STATS_FETCH_SUCCESS,
+            RESPONSE_TYPES.GIG_STATS_FETCH,
+            MESSAGES.GIG.STATS_FETCHED,
+            dto
+        )
     }
 
     // ───────────────────────────────────────────────────────────────────────
@@ -379,16 +416,18 @@ export class GigsController {
         }
     }
 
+    private parsePeriod(period?: string): GigStatsPeriod {
+        const allowed: GigStatsPeriod[] = ['thisMonth', 'lastMonth', '7d', '30d', '90d', 'all']
+        return allowed.includes(period as GigStatsPeriod) ? (period as GigStatsPeriod) : 'thisMonth'
+    }
+
     private async resolveImageUrl(key: string): Promise<string> {
         const url = await this.storage.getSignedReadUrl(key)
         return getFullUrl(url, this.configService.get<string>('app.baseUrl')) ?? url
     }
 
-    private async toListItemDto(
-        gig: GigEntity,
-        coverImage: GigImageEntity | null,
-        categoryName: string
-    ): Promise<MyGigListItemDto> {
+    private async toListItemDto(item: MyGigsListItem): Promise<MyGigListItemDto> {
+        const { gig, coverImage, categoryName } = item
         const coverUrl = coverImage ? await this.resolveImageUrl(coverImage.imageKey) : null
 
         return validateAndTransform(MyGigListItemDto, {
@@ -400,9 +439,9 @@ export class GigsController {
             coverImageUrl: coverUrl,
             categoryName,
             createdAt: gig.createdAt.toISOString(),
-            ordersCount: 0,
-            avgRating: null,
-            earningsVnd: 0
+            ordersCount: item.ordersCount,
+            avgRating: item.avgRating,
+            earningsVnd: item.earningsVnd
         })
     }
 
@@ -459,7 +498,8 @@ export class GigsController {
             pausedAt: bundle.gig.pausedAt?.toISOString() ?? null,
             images,
             bullets,
-            faqs
+            faqs,
+            reviewCount: bundle.reviewCount ?? 0
         })
     }
 }
