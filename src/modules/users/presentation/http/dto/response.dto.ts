@@ -6,6 +6,7 @@ import {
     IsArray,
     IsEmail,
     IsInt,
+    IsNumber,
     Min,
     MaxLength,
     ValidateNested
@@ -138,6 +139,30 @@ export class UserProfileResponseDto {
     memberSince!: string
 
     @Expose()
+    @ApiProperty({ description: 'Per-seller review count (F11)' })
+    @IsOptional()
+    @IsInt()
+    reviewCount?: number
+
+    @Expose()
+    @ApiProperty({ description: 'Per-seller average rating 1-5, null when no reviews (F11)', nullable: true })
+    @IsOptional()
+    @IsNumber()
+    avgRating?: number | null
+
+    @Expose()
+    @ApiProperty({ description: 'Completed orders as seller (all-time)' })
+    @IsOptional()
+    @IsInt()
+    ordersCompleted?: number
+
+    @Expose()
+    @ApiProperty({ description: 'Currently Active gigs' })
+    @IsOptional()
+    @IsInt()
+    activeGigs?: number
+
+    @Expose()
     @IsArray()
     @ValidateNested({ each: true })
     @Type(() => SkillResponseDto)
@@ -213,6 +238,30 @@ export class PublicProfileResponseDto {
     @ApiProperty({ description: 'ISO 8601 date string derived from createdAt' })
     @IsString()
     memberSince!: string
+
+    @Expose()
+    @ApiProperty({ description: 'Per-seller review count (F11)' })
+    @IsOptional()
+    @IsInt()
+    reviewCount?: number
+
+    @Expose()
+    @ApiProperty({ description: 'Per-seller average rating 1-5, null when no reviews (F11)', nullable: true })
+    @IsOptional()
+    @IsNumber()
+    avgRating?: number | null
+
+    @Expose()
+    @ApiProperty({ description: 'Completed orders as seller (all-time)' })
+    @IsOptional()
+    @IsInt()
+    ordersCompleted?: number
+
+    @Expose()
+    @ApiProperty({ description: 'Currently Active gigs' })
+    @IsOptional()
+    @IsInt()
+    activeGigs?: number
 
     @Expose()
     @IsArray()

@@ -948,6 +948,41 @@ const SEED_PLATFORM_FEE_PCT = 20
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
 
+// F11 — review text banks + weighted rating. Reviews are seeded on a subset of
+// Completed orders so Browse/Detail/Profile/Manage show real aggregates.
+const REVIEW_BODIES_POSITIVE = [
+    'Absolute lifesaver. Clear explanations and delivered ahead of schedule. Would book again in a heartbeat.',
+    'Super patient and really knew the material. Helped me finally understand the tricky parts before my exam.',
+    'Great communication throughout and the final result exceeded what I expected. Highly recommend.',
+    'Fast, friendly, and professional. Everything was exactly what I asked for and the quality was top-notch.',
+    'Walked me through every step and answered all my questions. Felt confident by the end. Thank you!',
+    'Quality work and a quick turnaround. Easy to work with and very responsive to feedback.',
+    'Went above and beyond — caught a couple of issues I hadn’t even noticed. Really appreciated the care.'
+]
+const REVIEW_BODIES_MIXED = [
+    'Decent work overall. Took a little longer than I hoped but the end result was solid.',
+    'Got the job done. Communication could have been a bit clearer but I’m satisfied with the outcome.',
+    'The delivery was okay — needed one round of revisions to get it right, but they were responsive about it.',
+    'Fair value for the price. Not perfect, but covered what I needed for the assignment.'
+]
+const REVIEW_REPLIES = [
+    'Thank you so much for the kind words — it was a pleasure working with you!',
+    'Really appreciate the feedback! Glad I could help. Reach out anytime.',
+    'Thanks for the review! Wishing you the best on your exam.',
+    'Thank you! Let me know if you need anything else down the line.'
+]
+
+// Weighted half-star rating: skewed high, occasional 3, rare 1-2.
+function pickRatingHalfStars(): number {
+    const r = faker.number.float({ min: 0, max: 1 })
+    if (r < 0.5) return 10 // 5.0
+    if (r < 0.72) return 9 // 4.5
+    if (r < 0.87) return 8 // 4.0
+    if (r < 0.93) return 7 // 3.5
+    if (r < 0.97) return 6 // 3.0
+    return faker.helpers.arrayElement([4, 3, 2]) // 2.0 / 1.5 / 1.0
+}
+
 interface OrderSpec {
     // Friendly label used in console logs only.
     kind:
@@ -1012,6 +1047,60 @@ async function seedOrders(users: SeededUser[]): Promise<void> {
     }
 
     console.log(`  ✓ ${orderCount} orders, ${extCount} pending extensions, ${cancelCount} pending cancellations`)
+}
+
+// Gig-detail views for the Performance card. Active gigs only; counts weighted
+// (most modest, a few outliers) and timestamps lean recent so short periods
+// still show data.
+const VIEW_COUNT_DIST: ReadonlyArray<{ value: { min: number; max: number }; weight: number }> = [
+    { value: { min: 0, max: 0 }, weight: 8 }, // brand-new, no views yet
+    { value: { min: 1, max: 15 }, weight: 22 },
+    { value: { min: 16, max: 60 }, weight: 38 },
+    { value: { min: 61, max: 160 }, weight: 24 },
+    { value: { min: 161, max: 400 }, weight: 8 } // breakout gig
+]
+
+const VIEW_WINDOW_DAYS = 120
+
+async function seedGigViews(gigs: SeededGig[]): Promise<void> {
+    console.log('  → creating gig views…')
+    const activeGigs = gigs.filter((g) => g.status === 'Active')
+    const now = Date.now()
+    let total = 0
+
+    // Order counts per seeded gig so a gig with orders never shows 0 views /
+    // "—" conversion — we floor its views at a believable multiple of orders.
+    const orderCounts = new Map<string, number>()
+    const grouped = await prisma.order.groupBy({
+        by: ['gigId'],
+        where: { gigId: { in: activeGigs.map((g) => g.id) } },
+        _count: { _all: true }
+    })
+    for (const row of grouped) orderCounts.set(row.gigId, row._count._all)
+
+    for (const gig of activeGigs) {
+        const orders = orderCounts.get(gig.id) ?? 0
+        let count = faker.number.int(weightedPick(VIEW_COUNT_DIST))
+        // ~8-25 views per order keeps conversion in a realistic single-digit-%
+        // to low-teens range for gigs that actually sold.
+        if (orders > 0) count = Math.max(count, orders * faker.number.int({ min: 8, max: 25 }))
+        if (count === 0) continue
+
+        const rows = Array.from({ length: count }, () => {
+            // min-of-two uniforms biases each view's timestamp toward recent days.
+            const dayOffset = Math.min(
+                faker.number.int({ min: 0, max: VIEW_WINDOW_DAYS - 1 }),
+                faker.number.int({ min: 0, max: VIEW_WINDOW_DAYS - 1 })
+            )
+            const intraDayMs = faker.number.int({ min: 0, max: DAY_MS - 1 })
+            return { gigId: gig.id, createdAt: new Date(now - dayOffset * DAY_MS - intraDayMs) }
+        })
+
+        await prisma.gigView.createMany({ data: rows })
+        total += count
+    }
+
+    console.log(`  ✓ ${total} gig views across ${activeGigs.length} active gigs`)
 }
 
 async function seedOneOrder(
@@ -1364,6 +1453,36 @@ async function seedOneOrder(
         cancellations += 1
     }
 
+    // F11 — seed a review on ~75% of Completed orders. Skewed-high rating,
+    // ~40% get a seller reply. Aggregates incremented to match the runtime path.
+    if (order.status === 'Completed' && faker.number.float({ min: 0, max: 1 }) < 0.75) {
+        const ratingHalfStars = pickRatingHalfStars()
+        const body = pick(ratingHalfStars >= 8 ? REVIEW_BODIES_POSITIVE : REVIEW_BODIES_MIXED)
+        const createdAt = new Date((order.completedAt ?? order.placedAt).getTime() + 6 * HOUR_MS)
+        const replied = faker.number.float({ min: 0, max: 1 }) < 0.4
+        await prisma.review.create({
+            data: {
+                orderId: order.id,
+                gigId: gig.id,
+                sellerId: gig.sellerId,
+                buyerId: buyer.id,
+                ratingHalfStars,
+                body,
+                replyBody: replied ? pick(REVIEW_REPLIES) : null,
+                repliedAt: replied ? new Date(createdAt.getTime() + 12 * HOUR_MS) : null,
+                createdAt
+            }
+        })
+        await prisma.gig.update({
+            where: { id: gig.id },
+            data: { reviewCount: { increment: 1 }, ratingSumHalfStars: { increment: ratingHalfStars } }
+        })
+        await prisma.user.update({
+            where: { id: gig.sellerId },
+            data: { reviewCount: { increment: 1 }, ratingSumHalfStars: { increment: ratingHalfStars } }
+        })
+    }
+
     return { extensions, cancellations }
 }
 
@@ -1421,6 +1540,7 @@ async function cleanupSeedData(): Promise<void> {
         await prisma.delivery.deleteMany({ where: { orderId: { in: orderIds } } })
         await prisma.extension.deleteMany({ where: { orderId: { in: orderIds } } })
         await prisma.cancellation.deleteMany({ where: { orderId: { in: orderIds } } })
+        await prisma.review.deleteMany({ where: { orderId: { in: orderIds } } })
         await prisma.orderEvent.deleteMany({ where: { orderId: { in: orderIds } } })
         await prisma.transaction.deleteMany({ where: { orderId: { in: orderIds } } })
         await prisma.order.deleteMany({ where: { id: { in: orderIds } } })
@@ -1484,6 +1604,7 @@ async function main(): Promise<void> {
     await seedWalletExtras(users)
     await seedMessages(users)
     await seedOrders(users)
+    await seedGigViews(gigs)
 
     const elapsed = ((Date.now() - start) / 1000).toFixed(1)
     console.log(`✅ Seed complete in ${elapsed}s`)

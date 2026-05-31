@@ -32,6 +32,16 @@ export interface OrderWirePayload {
     pendingExtension: WirePendingExtension | null
     pendingCancellation: WirePendingCancellation | null
     deliveryCount: number
+    review: WireReview | null
+}
+
+interface WireReview {
+    id: string
+    rating: number
+    body: string
+    replyBody: string | null
+    repliedAt: string | null
+    createdAt: string
 }
 
 interface WireParty {
@@ -142,7 +152,17 @@ export function toOrderWirePayload(order: OrderDetail): OrderWirePayload {
                   decidedAt: order.pendingCancellation.decidedAt?.toISOString() ?? null
               }
             : null,
-        deliveryCount: order.deliveryCount
+        deliveryCount: order.deliveryCount,
+        review: order.review
+            ? {
+                  id: order.review.id,
+                  rating: order.review.rating,
+                  body: order.review.body,
+                  replyBody: order.review.replyBody,
+                  repliedAt: order.review.repliedAt?.toISOString() ?? null,
+                  createdAt: order.review.createdAt.toISOString()
+              }
+            : null
     }
 }
 

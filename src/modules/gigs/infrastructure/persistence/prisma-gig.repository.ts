@@ -5,6 +5,8 @@ import {
     GigEntity,
     GigImageEntity,
     GigWithRelations,
+    GigStats,
+    GigStatsRange,
     MyGigsListResult,
     MyGigsFilters,
     MyGigsStatusFilter,
@@ -54,7 +56,44 @@ export class PrismaGigRepository implements GigRepositoryPort {
             bullets: row.bullets.map((b) => GigBulletMapper.toDomain(b)),
             faqs: row.faqs.map((f) => GigFaqMapper.toDomain(f)),
             categoryName: category?.name ?? '',
-            categoryIcon: category?.icon ?? ''
+            categoryIcon: category?.icon ?? '',
+            reviewCount: row.reviewCount
+        }
+    }
+
+    async getStats(gigId: string, range: GigStatsRange): Promise<GigStats> {
+        // Shared half-open [gte, lt) timestamp filter; undefined => unbounded ("all").
+        const window: Prisma.DateTimeFilter = {}
+        if (range.gte) window.gte = range.gte
+        if (range.lt) window.lt = range.lt
+        const hasWindow = Object.keys(window).length > 0
+
+        const [views, orders, completedAgg] = await Promise.all([
+            this.prisma.gigView.count({
+                where: { gigId, ...(hasWindow ? { createdAt: window } : {}) }
+            }),
+            this.prisma.order.count({
+                where: { gigId, ...(hasWindow ? { placedAt: window } : {}) }
+            }),
+            this.prisma.order.aggregate({
+                where: {
+                    gigId,
+                    status: 'Completed',
+                    ...(hasWindow ? { completedAt: window } : {})
+                },
+                _sum: { gigPriceVndSnapshot: true }
+            })
+        ])
+
+        // Seller keeps 80% of each completed order's snapshot price.
+        const grossCompleted = completedAgg._sum.gigPriceVndSnapshot ?? 0
+        const earningsVnd = grossCompleted - Math.floor((grossCompleted * 20) / 100)
+
+        return {
+            views,
+            orders,
+            earningsVnd,
+            conversion: views > 0 ? orders / views : null
         }
     }
 
@@ -65,37 +104,60 @@ export class PrismaGigRepository implements GigRepositoryPort {
             ...this.statusFilterToWhere(filters.status)
         }
 
-        const orderBy = this.sortToOrderBy(filters.sort)
-        const skip = (filters.page - 1) * filters.pageSize
+        // mostOrders/highestRated/highestEarnings rank by aggregates Prisma can't
+        // ORDER BY, so we load the seller's gigs for this filter, enrich, then
+        // sort + page in memory. Sellers have a bounded gig count in v1.
+        const rows = await this.prisma.gig.findMany({
+            where,
+            include: { images: { where: { position: 0 }, take: 1 } }
+        })
 
-        const [rows, total] = await this.prisma.$transaction([
-            this.prisma.gig.findMany({
-                where,
-                orderBy,
-                skip,
-                take: filters.pageSize,
-                include: { images: { where: { position: 0 }, take: 1 } }
+        const gigIds = rows.map((r) => r.id)
+        const categoryIds = Array.from(new Set(rows.map((r) => r.categoryId)))
+        const [orderGroups, earningGroups, categories] = await Promise.all([
+            this.prisma.order.groupBy({
+                by: ['gigId'],
+                where: { gigId: { in: gigIds } },
+                _count: { _all: true }
             }),
-            this.prisma.gig.count({ where })
+            this.prisma.order.groupBy({
+                by: ['gigId'],
+                where: { gigId: { in: gigIds }, status: 'Completed' },
+                _sum: { gigPriceVndSnapshot: true }
+            }),
+            this.prisma.category.findMany({ where: { id: { in: categoryIds } }, select: { id: true, name: true } })
         ])
 
-        // Fetch category names in a single follow-up query to avoid N+1.
-        const categoryIds = Array.from(new Set(rows.map((r) => r.categoryId)))
-        const categories = categoryIds.length
-            ? await this.prisma.category.findMany({
-                  where: { id: { in: categoryIds } },
-                  select: { id: true, name: true }
-              })
-            : []
+        const ordersByGig = new Map(orderGroups.map((g) => [g.gigId, g._count._all]))
+        const grossByGig = new Map(earningGroups.map((g) => [g.gigId, g._sum.gigPriceVndSnapshot ?? 0]))
         const categoryNameById = new Map(categories.map((c) => [c.id, c.name]))
 
+        const enriched = rows.map((row) => {
+            const gross = grossByGig.get(row.id) ?? 0
+            return {
+                row,
+                ordersCount: ordersByGig.get(row.id) ?? 0,
+                // Seller keeps 80% of each completed order's snapshot price.
+                earningsVnd: gross - Math.floor((gross * 20) / 100),
+                avgRating: row.reviewCount > 0 ? row.ratingSumHalfStars / 2 / row.reviewCount : null
+            }
+        })
+
+        this.sortMyGigs(enriched, filters.sort)
+
+        const skip = (filters.page - 1) * filters.pageSize
+        const pageRows = enriched.slice(skip, skip + filters.pageSize)
+
         return {
-            items: rows.map((row) => ({
-                gig: GigMapper.toDomain(row),
-                coverImage: row.images[0] ? GigImageMapper.toDomain(row.images[0]) : null,
-                categoryName: categoryNameById.get(row.categoryId) ?? ''
+            items: pageRows.map((e) => ({
+                gig: GigMapper.toDomain(e.row),
+                coverImage: e.row.images[0] ? GigImageMapper.toDomain(e.row.images[0]) : null,
+                categoryName: categoryNameById.get(e.row.categoryId) ?? '',
+                ordersCount: e.ordersCount,
+                avgRating: e.avgRating,
+                earningsVnd: e.earningsVnd
             })),
-            total
+            total: enriched.length
         }
     }
 
@@ -524,19 +586,36 @@ export class PrismaGigRepository implements GigRepositoryPort {
         }
     }
 
-    private sortToOrderBy(sort: MyGigsSort): { createdAt?: 'asc' | 'desc'; updatedAt?: 'asc' | 'desc' } {
+    // In-memory sort for the My Gigs table. Aggregate sorts break ties by
+    // newest-first; highestRated pushes unrated gigs (avgRating null) to the end.
+    private sortMyGigs<
+        T extends {
+            row: { createdAt: Date; updatedAt: Date }
+            ordersCount: number
+            avgRating: number | null
+            earningsVnd: number
+        }
+    >(items: T[], sort: MyGigsSort): void {
+        const newest = (a: T, b: T) => b.row.createdAt.getTime() - a.row.createdAt.getTime()
         switch (sort) {
             case 'oldest':
-                return { createdAt: 'asc' }
+                items.sort((a, b) => a.row.createdAt.getTime() - b.row.createdAt.getTime())
+                break
             case 'recentlyUpdated':
-                return { updatedAt: 'desc' }
-            // No order/review columns yet — fall back to newest-first until F09/F11 land.
+                items.sort((a, b) => b.row.updatedAt.getTime() - a.row.updatedAt.getTime())
+                break
             case 'mostOrders':
+                items.sort((a, b) => b.ordersCount - a.ordersCount || newest(a, b))
+                break
             case 'highestRated':
+                items.sort((a, b) => (b.avgRating ?? -1) - (a.avgRating ?? -1) || newest(a, b))
+                break
             case 'highestEarnings':
+                items.sort((a, b) => b.earningsVnd - a.earningsVnd || newest(a, b))
+                break
             case 'newest':
             default:
-                return { createdAt: 'desc' }
+                items.sort(newest)
         }
     }
 }

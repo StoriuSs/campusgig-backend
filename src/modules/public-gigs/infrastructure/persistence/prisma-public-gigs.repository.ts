@@ -10,9 +10,24 @@ import {
     PUBLIC_GIGS_REPOSITORY_PORT
 } from '../../domain/ports/public-gigs.repository.port'
 
+// avg (1-5) from the increment-only aggregate columns; null = "New seller".
+function avgFromHalfStars(count: number, sumHalfStars: number): number | null {
+    return count > 0 ? sumHalfStars / 2 / count : null
+}
+
 @Injectable()
 export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
     constructor(private readonly prisma: PrismaService) {}
+
+    async recordView(gigId: string): Promise<void> {
+        // Only count views on a live (Active, non-deleted) gig.
+        const gig = await this.prisma.gig.findFirst({
+            where: { id: gigId, status: 'Active', deletedAt: null },
+            select: { id: true }
+        })
+        if (!gig) return
+        await this.prisma.gigView.create({ data: { gigId } })
+    }
 
     async browse(filters: BrowseGigsFilters): Promise<BrowseGigsResult> {
         const { q, categoryId, minPrice, maxPrice, maxDelivery, endorsedOnly, sellerId, sort, page, pageSize, userId } =
@@ -93,8 +108,8 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
                 priceVnd: row.priceVnd,
                 deliveryDays: row.deliveryDays,
                 coverImageKey: row.images[0]?.imageKey ?? null,
-                avgRating: null,
-                reviewCount: 0,
+                avgRating: avgFromHalfStars(row.reviewCount, row.ratingSumHalfStars),
+                reviewCount: row.reviewCount,
                 isSaved: savedGigIds.has(row.id),
                 seller: {
                     id: row.sellerId,
@@ -135,6 +150,8 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
                     endorsedAt: true,
                     createdAt: true,
                     isAdmin: true,
+                    reviewCount: true,
+                    ratingSumHalfStars: true,
                     skills: { select: { name: true }, orderBy: { position: 'asc' } }
                 }
             }),
@@ -203,8 +220,8 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
                 priceVnd: r.priceVnd,
                 deliveryDays: r.deliveryDays,
                 coverImageKey: r.images[0]?.imageKey ?? null,
-                avgRating: null,
-                reviewCount: 0,
+                avgRating: avgFromHalfStars(r.reviewCount, r.ratingSumHalfStars),
+                reviewCount: r.reviewCount,
                 isSaved: false,
                 seller: {
                     id: r.sellerId,
@@ -224,8 +241,8 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
             deliveryDays: row.deliveryDays,
             categoryId: row.categoryId,
             categoryName: category?.name ?? '',
-            avgRating: null,
-            reviewCount: 0,
+            avgRating: avgFromHalfStars(row.reviewCount, row.ratingSumHalfStars),
+            reviewCount: row.reviewCount,
             completedOrderCount: gigCompletedOrderCount,
             inQueueOrderCount: gigInQueueOrderCount,
             isSaved,
@@ -251,8 +268,8 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
                 isEndorsed: seller?.endorsedAt != null,
                 joinedAt: seller?.createdAt ?? new Date(),
                 gigCount: sellerGigCount,
-                avgRating: null,
-                reviewCount: 0,
+                avgRating: avgFromHalfStars(seller?.reviewCount ?? 0, seller?.ratingSumHalfStars ?? 0),
+                reviewCount: seller?.reviewCount ?? 0,
                 completedOrderCount: sellerCompletedOrderCount
             },
             similarGigs: similarRows.map(toSummary),

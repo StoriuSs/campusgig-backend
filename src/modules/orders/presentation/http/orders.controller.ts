@@ -628,7 +628,17 @@ export class OrdersController {
                       decidedAt: order.pendingCancellation.decidedAt?.toISOString() ?? null
                   }
                 : null,
-            deliveryCount: order.deliveryCount
+            deliveryCount: order.deliveryCount,
+            review: order.review
+                ? {
+                      id: order.review.id,
+                      rating: order.review.rating,
+                      body: order.review.body,
+                      replyBody: order.review.replyBody,
+                      repliedAt: order.review.repliedAt?.toISOString() ?? null,
+                      createdAt: order.review.createdAt.toISOString()
+                  }
+                : null
         })
     }
 

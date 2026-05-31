@@ -7,6 +7,10 @@ export interface UserWithRelations {
     user: UserEntity
     skills: UserSkillEntity[]
     portfolioItems: PortfolioItemEntity[]
+    // Profile stats (all-time). completedOrderCount = orders delivered as seller;
+    // activeGigCount = currently-Active gigs.
+    completedOrderCount: number
+    activeGigCount: number
 }
 
 export interface UserRepositoryPort {

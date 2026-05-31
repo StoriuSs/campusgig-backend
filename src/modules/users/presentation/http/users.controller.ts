@@ -152,6 +152,11 @@ export class UsersController {
             languages: bundle.user.languages,
             endorsed: bundle.user.isEndorsed,
             memberSince: bundle.user.createdAt.toISOString(),
+            reviewCount: bundle.user.reviewCount,
+            avgRating:
+                bundle.user.reviewCount > 0 ? bundle.user.ratingSumHalfStars / 2 / bundle.user.reviewCount : null,
+            ordersCompleted: bundle.completedOrderCount,
+            activeGigs: bundle.activeGigCount,
             skills: bundle.skills.map((s) => this.mapSkill(s)),
             portfolioItems
         })

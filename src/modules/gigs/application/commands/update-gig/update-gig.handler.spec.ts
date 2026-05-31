@@ -54,7 +54,8 @@ describe('UpdateGigHandler — smart moderation', () => {
         bullets: [new GigBulletEntity({ id: 'b1', gigId: 'g1', text: 'Original bullet', position: 0 })],
         faqs: [new GigFaqEntity({ id: 'f1', gigId: 'g1', question: 'Q?', answer: 'A x'.repeat(10), position: 0 })],
         categoryName: 'Tutoring',
-        categoryIcon: 'BookOutlined'
+        categoryIcon: 'BookOutlined',
+        reviewCount: 0
     })
 
     beforeEach(async () => {

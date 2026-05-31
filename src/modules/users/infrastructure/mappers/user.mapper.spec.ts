@@ -21,6 +21,8 @@ describe('UserMapper', () => {
         endorsedAt: null,
         endorsedBy: null,
         isAdmin: false,
+        reviewCount: 0,
+        ratingSumHalfStars: 0,
         walletBalance: 0,
         escrowBalance: 0,
         pendingWithdrawalBalance: 0,

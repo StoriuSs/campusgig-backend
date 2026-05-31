@@ -118,10 +118,16 @@ export class PrismaUserRepository implements UserRepositoryPort {
             }
         })
         if (!row) return null
+        const [completedOrderCount, activeGigCount] = await Promise.all([
+            this.prisma.order.count({ where: { sellerId: row.id, status: 'Completed' } }),
+            this.prisma.gig.count({ where: { sellerId: row.id, status: 'Active', deletedAt: null } })
+        ])
         return {
             user: UserMapper.toDomain(row),
             skills: row.skills.map(UserSkillMapper.toDomain),
-            portfolioItems: row.portfolioItems.map(PortfolioItemMapper.toDomain)
+            portfolioItems: row.portfolioItems.map(PortfolioItemMapper.toDomain),
+            completedOrderCount,
+            activeGigCount
         }
     }
 
@@ -138,10 +144,16 @@ export class PrismaUserRepository implements UserRepositoryPort {
             }
         })
         if (!row) return null
+        const [completedOrderCount, activeGigCount] = await Promise.all([
+            this.prisma.order.count({ where: { sellerId: row.id, status: 'Completed' } }),
+            this.prisma.gig.count({ where: { sellerId: row.id, status: 'Active', deletedAt: null } })
+        ])
         return {
             user: UserMapper.toDomain(row),
             skills: row.skills.map(UserSkillMapper.toDomain),
-            portfolioItems: row.portfolioItems.map(PortfolioItemMapper.toDomain)
+            portfolioItems: row.portfolioItems.map(PortfolioItemMapper.toDomain),
+            completedOrderCount,
+            activeGigCount
         }
     }
 

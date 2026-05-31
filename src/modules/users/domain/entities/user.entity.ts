@@ -30,6 +30,10 @@ export class UserEntity {
     // Buyer/seller queries filter `WHERE isAdmin = false` to keep admins out.
     isAdmin: boolean
 
+    // Per-seller rating aggregate (F11). avg (1-5) = ratingSumHalfStars / 2 / reviewCount.
+    reviewCount: number
+    ratingSumHalfStars: number
+
     readonly createdAt: Date
     updatedAt: Date
     deletedAt: Date | null
@@ -50,6 +54,8 @@ export class UserEntity {
         endorsedAt?: Date | null
         endorsedBy?: string | null
         isAdmin?: boolean
+        reviewCount?: number
+        ratingSumHalfStars?: number
         createdAt?: Date
         updatedAt?: Date
         deletedAt?: Date | null
@@ -69,6 +75,8 @@ export class UserEntity {
         this.endorsedAt = props.endorsedAt ?? null
         this.endorsedBy = props.endorsedBy ?? null
         this.isAdmin = props.isAdmin ?? false
+        this.reviewCount = props.reviewCount ?? 0
+        this.ratingSumHalfStars = props.ratingSumHalfStars ?? 0
         this.createdAt = props.createdAt ?? new Date()
         this.updatedAt = props.updatedAt ?? new Date()
         this.deletedAt = props.deletedAt ?? null

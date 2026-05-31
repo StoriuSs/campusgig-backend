@@ -141,7 +141,17 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             latestDelivery: latestDelivery ? this.toDelivery(latestDelivery) : null,
             pendingExtension: pendingExtension ? this.toExtension(pendingExtension) : null,
             pendingCancellation: pendingCancellation ? this.toCancellation(pendingCancellation) : null,
-            deliveryCount: (o.deliveries ?? []).length
+            deliveryCount: (o.deliveries ?? []).length,
+            review: o.review
+                ? {
+                      id: o.review.id,
+                      rating: o.review.ratingHalfStars / 2,
+                      body: o.review.body,
+                      replyBody: o.review.replyBody ?? null,
+                      repliedAt: o.review.repliedAt ?? null,
+                      createdAt: o.review.createdAt
+                  }
+                : null
         }
     }
 
@@ -230,7 +240,8 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
                 where: { status: 'Pending' as const },
                 orderBy: { requestedAt: 'desc' as const },
                 take: 1
-            }
+            },
+            review: true
         }
     }
 

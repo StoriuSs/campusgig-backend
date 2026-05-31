@@ -1,0 +1,26 @@
+// Feature 11 — Reviews & ratings. One review per Completed order, buyer→seller.
+// Write-once: orderId is unique, no edit/delete path. Rating is stored as an
+// integer number of half-stars (2..10 = 1.0..5.0) so averaging stays exact and
+// per-gig / per-seller aggregates increment in O(1) inside the submit
+// transaction. Seller reply is a write-once column pair (1:1, no separate table).
+model Review {
+  id              String    @id @default(uuid())
+  orderId         String    @unique
+  gigId           String
+  sellerId        String
+  buyerId         String
+  ratingHalfStars Int
+  body            String
+  replyBody       String?
+  repliedAt       DateTime? @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+
+  order  Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  gig    Gig   @relation(fields: [gigId], references: [id])
+  seller User  @relation("SellerReviews", fields: [sellerId], references: [id], onDelete: Cascade)
+  buyer  User  @relation("BuyerReviews", fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@index([gigId, createdAt(sort: Desc)])
+  @@index([sellerId, createdAt(sort: Desc)])
+  @@index([gigId, ratingHalfStars])
+}

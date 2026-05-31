@@ -18,7 +18,8 @@ import {
     ApproveGigHandler,
     RejectGigHandler,
     ListAdminGigQueueHandler,
-    GetAdminGigByIdHandler
+    GetAdminGigByIdHandler,
+    GetMyGigStatsHandler
 } from './application'
 import { PrismaGigRepository, GigStorageAdapter } from './infrastructure'
 import { GigsController, AdminGigsController } from './presentation'
@@ -39,7 +40,13 @@ const CommandHandlers = [
     ApproveGigHandler,
     RejectGigHandler
 ]
-const QueryHandlers = [ListMyGigsHandler, GetMyGigByIdHandler, ListAdminGigQueueHandler, GetAdminGigByIdHandler]
+const QueryHandlers = [
+    ListMyGigsHandler,
+    GetMyGigByIdHandler,
+    ListAdminGigQueueHandler,
+    GetAdminGigByIdHandler,
+    GetMyGigStatsHandler
+]
 
 @Module({
     imports: [CqrsModule, UploadModule, CategoriesModule],

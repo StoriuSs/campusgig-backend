@@ -38,7 +38,8 @@ describe('GetMyGigByIdHandler', () => {
         bullets: [],
         faqs: [],
         categoryName: 'Tutoring',
-        categoryIcon: 'BookOutlined'
+        categoryIcon: 'BookOutlined',
+        reviewCount: 0
     })
 
     it('throws GigNotFoundException when the gig does not exist', async () => {

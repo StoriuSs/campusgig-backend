@@ -1,5 +1,5 @@
-import { Controller, Get, Param, Query, HttpCode, HttpStatus, Inject, Req } from '@nestjs/common'
-import { QueryBus } from '@nestjs/cqrs'
+import { Controller, Get, Post, Param, Query, HttpCode, HttpStatus, Inject, Req } from '@nestjs/common'
+import { QueryBus, CommandBus } from '@nestjs/cqrs'
 import { ConfigService } from '@nestjs/config'
 import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager'
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger'
@@ -12,7 +12,7 @@ import { validateAndTransform, getFullUrl } from '@/shared/utils'
 import { PrismaService } from '@/shared/infrastructure'
 
 import { GigStoragePort, GIG_STORAGE_PORT } from '@/modules/gigs/application/ports'
-import { BrowseGigsQuery, GetPublicGigByIdQuery } from '@/modules/public-gigs/application'
+import { BrowseGigsQuery, GetPublicGigByIdQuery, RecordGigViewCommand } from '@/modules/public-gigs/application'
 import type {
     BrowseGigsResult,
     PublicGigDetail,
@@ -39,6 +39,7 @@ const DETAIL_TTL = 300
 export class PublicGigsController {
     constructor(
         private readonly queryBus: QueryBus,
+        private readonly commandBus: CommandBus,
         private readonly configService: ConfigService,
         @Inject(CACHE_MANAGER) private readonly cache: Cache,
         @Inject(GIG_STORAGE_PORT) private readonly storage: GigStoragePort,
@@ -186,6 +187,22 @@ export class PublicGigsController {
             RESPONSE_TYPES.PUBLIC_GIG_FETCH,
             MESSAGES.GIG.PUBLIC_FETCHED,
             dto
+        )
+    }
+
+    @Post(':id/view')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'Record a gig-detail view (powers the seller Performance card)' })
+    @ApiParam({ name: 'id', description: 'Gig UUID' })
+    @ApiResponse({ status: 200, description: 'View recorded (no-op if the gig is not live)' })
+    async recordView(@Param('id') id: string): Promise<ServiceResponse<null>> {
+        // Own-views + reload spam are filtered client-side; just append a row.
+        await this.commandBus.execute(new RecordGigViewCommand(id))
+        return createResponse(
+            RESPONSE_CODES.GIG_VIEW_RECORD_SUCCESS,
+            RESPONSE_TYPES.GIG_VIEW_RECORD,
+            MESSAGES.GIG.VIEW_RECORDED,
+            null
         )
     }
 

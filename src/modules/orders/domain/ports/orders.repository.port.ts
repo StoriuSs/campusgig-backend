@@ -138,12 +138,24 @@ export interface OrderItem {
     cancellationReason: string | null
 }
 
+// The buyer's review of this order (F11). Same for both viewers; the frontend
+// derives "canReview" from status === Completed && viewer is buyer && review null.
+export interface OrderReviewInfo {
+    id: string
+    rating: number // 1-5, 0.5 steps
+    body: string
+    replyBody: string | null
+    repliedAt: Date | null
+    createdAt: Date
+}
+
 // Full detail for the Order Workspace page.
 export interface OrderDetail extends OrderItem {
     latestDelivery: DeliveryItem | null
     pendingExtension: ExtensionItem | null
     pendingCancellation: CancellationItem | null
     deliveryCount: number // for "Previous versions" toggle visibility
+    review: OrderReviewInfo | null
 }
 
 // Pre-flattened row for the Orders list page. `actionRequired` is computed in SQL.

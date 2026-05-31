@@ -114,7 +114,10 @@ export const MESSAGES = {
         REJECTED: 'Gig rejected',
         // Public Gigs (Feature 06)
         BROWSE_FETCHED: 'Gigs browsed successfully',
-        PUBLIC_FETCHED: 'Gig details retrieved successfully'
+        PUBLIC_FETCHED: 'Gig details retrieved successfully',
+        // Gig analytics (Feature 11+)
+        VIEW_RECORDED: 'View recorded',
+        STATS_FETCHED: 'Gig stats retrieved successfully'
     },
 
     // Wishlist messages (Feature 06)
@@ -172,6 +175,15 @@ export const MESSAGES = {
         EXTENSION_DECIDED: 'Extension decision recorded',
         CANCELLATION_REQUESTED: 'Cancellation request sent',
         CANCELLATION_DECIDED: 'Cancellation decision recorded'
+    },
+
+    // Review messages
+    REVIEWS: {
+        SUBMITTED: 'Review submitted',
+        REPLIED: 'Reply posted',
+        LISTED: 'Reviews retrieved',
+        SUMMARY_FETCHED: 'Review summary retrieved',
+        MANAGE_LISTED: 'Reviews retrieved'
     },
 
     // Health messages
