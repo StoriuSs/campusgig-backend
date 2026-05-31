@@ -1,7 +1,6 @@
 export const ORDERS_REPOSITORY_PORT = 'ORDERS_REPOSITORY_PORT'
 
-// Mirrors Prisma enums so application/domain layers never depend on
-// @prisma/client. Keep these unions in sync with the Prisma schema.
+// Mirror of Prisma enums — keep in sync with the schema.
 export type OrderStatus =
     | 'PendingReview'
     | 'InProgress'
@@ -47,10 +46,7 @@ export type CancellationReasonCode =
 
 export type OrdersSort = 'most_urgent' | 'newest' | 'oldest' | 'amount_desc' | 'amount_asc'
 
-// ── Shapes ────────────────────────────────────────────────────────────────
-
-// Avatar / display fields keep S3 keys; the controller resolves them to
-// presigned URLs before responding (same pattern as wallet + messaging).
+// avatarKey is an S3 key; controllers resolve to presigned URLs before responding.
 export interface OrderParty {
     id: string
     username: string | null
@@ -88,7 +84,7 @@ export interface ExtensionItem {
     id: string
     orderId: string
     requestedById: string
-    daysRequested: number
+    hoursRequested: number
     reason: string | null
     status: ExtensionStatus
     expiresAt: Date
@@ -120,8 +116,7 @@ export interface OrderEventItem {
     createdAt: Date
 }
 
-// Order summary shape — used by the workspace context column + the orders
-// list ROW shape (with a few extra row-level fields).
+// Used by the workspace context column and the orders list row.
 export interface OrderItem {
     id: string
     number: number
@@ -143,8 +138,7 @@ export interface OrderItem {
     cancellationReason: string | null
 }
 
-// Full detail used by the Order Workspace page — adds the latest delivery,
-// pending extension/cancellation, and derived flags.
+// Full detail for the Order Workspace page.
 export interface OrderDetail extends OrderItem {
     latestDelivery: DeliveryItem | null
     pendingExtension: ExtensionItem | null
@@ -152,8 +146,7 @@ export interface OrderDetail extends OrderItem {
     deliveryCount: number // for "Previous versions" toggle visibility
 }
 
-// One row in the Orders list page. Pre-flattened — no nested joins on the
-// frontend. `actionRequired` is computed in SQL per SRS § Order Lifecycle.
+// Pre-flattened row for the Orders list page. `actionRequired` is computed in SQL.
 export interface OrderListRow {
     id: string
     number: number
@@ -166,12 +159,10 @@ export interface OrderListRow {
     counterpartyAvatarKey: string | null
     placedAt: Date
     amountVnd: number
-    // Deadlines surfaced to the frontend for the DEADLINE column formatter
     acceptDeadline: Date | null
     deliveryDeadline: Date | null
     reviewDeadline: Date | null
     disputeDeadline: Date | null
-    // Phase-2 inputs to the formatter
     pendingExtensionExpiresAt: Date | null
     pendingCancellationExpiresAt: Date | null
     pendingCancellationInitiator: CancellationInitiator | null
@@ -189,7 +180,6 @@ export interface OrderStatusCounts {
     Cancelled: number
 }
 
-// Wallet-side side-effect references returned by transitions that move money
 export interface MoneyMoveRefs {
     paymentId?: string
     refundId?: string
@@ -197,10 +187,7 @@ export interface MoneyMoveRefs {
     platformFeeId?: string
 }
 
-// ── Port ──────────────────────────────────────────────────────────────────
-
 export interface OrdersRepositoryPort {
-    // Reads
     findByIdForViewer(orderId: string, viewerId: string): Promise<OrderDetail | null>
     listForUser(input: {
         viewerId: string
@@ -215,10 +202,7 @@ export interface OrdersRepositoryPort {
 
     listEvents(orderId: string, viewerId: string): Promise<OrderEventItem[]>
     countActionRequired(viewerId: string): Promise<{ asBuyer: number; asSeller: number }>
-    // Active orders between the viewer and one specific counterparty (either
-    // direction). "Active" = not Completed/Cancelled. Powers the Inbox chat
-    // header banner — when two people have an order in flight, the inbox
-    // surfaces a chip linking straight to the order workspace.
+    // Active (not Completed/Cancelled) orders between viewer and one counterparty in either direction.
     listActiveBetween(viewerId: string, otherUserId: string): Promise<OrderListRow[]>
     listDeliveries(orderId: string, viewerId: string): Promise<DeliveryItem[]>
     getDeliveryFileForResolve(
@@ -228,10 +212,8 @@ export interface OrdersRepositoryPort {
         viewerId: string
     ): Promise<{ id: string; key: string; name: string } | null>
 
-    // Staged DeliveryFile insert — called by the upload endpoint. The file
-    // is already in S3 but not yet linked to any Delivery row. SendDeliverWork
-    // / SendUpdateDelivery claim it by setting `deliveryId` inside their
-    // $transactions. Mirror of MessageAttachment's stageAttachment.
+    // File is already in S3 but not yet linked to a Delivery row.
+    // SendDeliverWork / SendUpdateDelivery claim it inside their $transactions.
     stageDeliveryFile(input: {
         sellerId: string
         orderId: string
@@ -241,10 +223,9 @@ export interface OrdersRepositoryPort {
         mime: string
     }): Promise<DeliveryFileItem>
 
-    // ── Transitions ───────────────────────────────────────────────────────
-    // All transitions are atomic ($transaction) and idempotent (return null /
-    // existing if already in target state, throw InvalidTransitionException
-    // if the source state doesn't match).
+    // All transitions are atomic ($transaction). Return null when the order has
+    // already moved past the source state (idempotent guard for late-firing jobs).
+    // Throw InvalidTransitionException when source state doesn't match.
 
     placeOrder(input: {
         buyerId: string
@@ -271,11 +252,10 @@ export interface OrdersRepositoryPort {
 
     acceptDelivery(orderId: string, viewerId: string): Promise<{ order: OrderDetail; refs: MoneyMoveRefs }>
 
-    // Phase 2
     requestExtension(input: {
         orderId: string
         viewerId: string
-        daysRequested: number
+        hoursRequested: number
         reason: string | null
     }): Promise<{ order: OrderDetail; extension: ExtensionItem }>
 
@@ -298,10 +278,6 @@ export interface OrdersRepositoryPort {
         refs: MoneyMoveRefs
     }>
 
-    // ── System-driven transitions (BullMQ jobs) ──────────────────────────
-    // Each returns null when the order has moved out of the source state
-    // (idempotent guard) so a late-firing job never double-applies.
-
     autoCancelOrder(orderId: string): Promise<OrderDetail | null>
     markLate(orderId: string): Promise<OrderDetail | null>
     autoCompleteOrder(orderId: string): Promise<OrderDetail | null>
@@ -310,6 +286,6 @@ export interface OrdersRepositoryPort {
         refs: MoneyMoveRefs
     } | null>
 
-    expireExtension(extensionId: string): Promise<ExtensionItem | null>
-    expireCancellation(cancellationId: string): Promise<CancellationItem | null>
+    expireExtension(extensionId: string): Promise<{ order: OrderDetail; extension: ExtensionItem } | null>
+    expireCancellation(cancellationId: string): Promise<{ order: OrderDetail; cancellation: CancellationItem } | null>
 }

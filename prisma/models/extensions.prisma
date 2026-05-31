@@ -22,16 +22,16 @@ enum ExtensionStatus {
 }
 
 model Extension {
-  id            String          @id @default(uuid())
-  orderId       String
-  requestedById String // always the seller in v1
-  daysRequested Int // matches one of the M1 radio presets (1/2/3/5)
-  reason        String? // optional free text — chat carries the followup conversation
-  status        ExtensionStatus @default(Pending)
-  expiresAt     DateTime        @db.Timestamptz(6) // requestedAt + 24h
-  requestedAt   DateTime        @default(now()) @db.Timestamptz(6)
-  decidedAt     DateTime?       @db.Timestamptz(6)
-  decidedById   String? // buyer who decided
+  id             String          @id @default(uuid())
+  orderId        String
+  requestedById  String // always the seller in v1
+  hoursRequested Int // matches one of the M1 radio presets (12/24/48/72 hours)
+  reason         String? // optional free text — chat carries the followup conversation
+  status         ExtensionStatus @default(Pending)
+  expiresAt      DateTime        @db.Timestamptz(6) // requestedAt + 24h
+  requestedAt    DateTime        @default(now()) @db.Timestamptz(6)
+  decidedAt      DateTime?       @db.Timestamptz(6)
+  decidedById    String? // buyer who decided
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 

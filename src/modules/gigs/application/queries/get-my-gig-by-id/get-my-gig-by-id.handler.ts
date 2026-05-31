@@ -10,7 +10,6 @@ export class GetMyGigByIdHandler implements IQueryHandler<GetMyGigByIdQuery> {
     async execute(query: GetMyGigByIdQuery): Promise<GigWithRelations> {
         const bundle = await this.gigRepo.findByIdWithRelations(query.gigId)
 
-        // 404-not-403 policy: don't leak that a gig exists if the caller doesn't own it.
         if (!bundle || bundle.gig.sellerId !== query.callerId || bundle.gig.isDeleted) {
             throw new GigNotFoundException(query.gigId)
         }

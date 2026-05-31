@@ -22,15 +22,8 @@ export class DeclineOrderHandler implements ICommandHandler<DeclineOrderCommand>
             throw new DeclineNoteTooShortException(DECLINE_NOTE_MIN_LENGTH)
         }
 
-        // Repo handles: viewer == seller guard, status == PendingReview guard,
-        // status flip to Cancelled, refundFromEscrow, cancellationReason +
-        // cancelledBy fields, AcceptDeadlineJob removal, OrderEvent + system
-        // message — all in one $transaction.
         const order = await this.repo.declineOrder(command.orderId, command.viewerId, note)
 
-        // The refs come back from refundFromEscrow inside the repo — we
-        // surface the refund Transaction id in the event so future Notification
-        // handlers can deep-link to the wallet row.
         const refs: MoneyMoveRefs = {}
         this.eventBus.publish(new OrderDeclinedEvent(order, refs, command.viewerId, note))
         return order

@@ -931,6 +931,442 @@ async function seedMessages(users: SeededUser[]): Promise<void> {
     )
 }
 
+// ── Orders + transitions (Phase 1 + Phase 2 mix) ──────────────────────────
+//
+// Produces ~5 orders per demo seller buyer pair covering every reachable
+// status so /orders, /dashboard, and the workspace all have content on a
+// fresh seed run. Wallet movements are written directly here (rather than
+// going through the orders module) because the seed script runs outside
+// the NestJS DI container.
+
+const PLATFORM_USER_ID = '00000000-0000-0000-0000-000000000001'
+const SEED_PLATFORM_FEE_PCT = 20
+
+// How many days after `placedAt` simulated transitions happen. Kept tight
+// so the timestamps are believable for a fresh seed (most orders happened
+// in the last 2 weeks).
+const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
+
+interface OrderSpec {
+    // Friendly label used in console logs only.
+    kind:
+        | 'pending-review'
+        | 'in-progress'
+        | 'late'
+        | 'delivered'
+        | 'delivered-pending-extension'
+        | 'in-progress-pending-cancellation'
+        | 'awaiting-finalization'
+        | 'completed'
+        | 'cancelled'
+}
+
+async function seedOrders(users: SeededUser[]): Promise<void> {
+    console.log('  → creating Phase 1+2 demo orders…')
+
+    // First 3 demo users get the rich mix. Need at least 2 to have a
+    // counterparty; we'll always pair a demo BUYER with a seeded SELLER
+    // who has at least one Active gig.
+    const demoBuyers = users.slice(0, 3)
+    if (demoBuyers.length === 0) return
+
+    // Fetch a pool of Active gigs whose seller is in the seeded set and
+    // is NOT one of the demo buyers themselves.
+    const allActiveGigs = await prisma.gig.findMany({
+        where: { status: 'Active' },
+        select: { id: true, sellerId: true, priceVnd: true, deliveryDays: true, title: true },
+        take: 200
+    })
+
+    // Per-buyer fan-out. Skips silently if there aren't enough gigs to pick.
+    let orderCount = 0
+    let extCount = 0
+    let cancelCount = 0
+
+    for (const buyer of demoBuyers) {
+        const eligibleGigs = allActiveGigs.filter((g: { sellerId: string }) => g.sellerId !== buyer.id)
+        if (eligibleGigs.length < 3) continue
+
+        // Different gigs per kind so the workspace lists don't show the
+        // same gig title repeated for the demo buyer.
+        const specs: OrderSpec['kind'][] = [
+            'pending-review',
+            'in-progress',
+            'late',
+            'delivered',
+            'delivered-pending-extension',
+            'in-progress-pending-cancellation',
+            'awaiting-finalization',
+            'completed',
+            'cancelled'
+        ]
+
+        for (const kind of specs) {
+            const gig = pick(eligibleGigs)
+            const result = await seedOneOrder(buyer, gig, kind)
+            orderCount += 1
+            extCount += result.extensions
+            cancelCount += result.cancellations
+        }
+    }
+
+    console.log(`  ✓ ${orderCount} orders, ${extCount} pending extensions, ${cancelCount} pending cancellations`)
+}
+
+async function seedOneOrder(
+    buyer: SeededUser,
+    gig: {
+        id: string
+        sellerId: string
+        priceVnd: number
+        deliveryDays: number
+        title: string
+    },
+    kind: OrderSpec['kind']
+): Promise<{ extensions: number; cancellations: number }> {
+    // Reference timestamps anchored to "now" minus an age that suits each
+    // kind. Most lifecycles span the last ~2 weeks.
+    const now = Date.now()
+    let extensions = 0
+    let cancellations = 0
+
+    const params = (() => {
+        switch (kind) {
+            case 'pending-review':
+                return {
+                    placedAt: new Date(now - 6 * HOUR_MS),
+                    status: 'PendingReview' as const,
+                    acceptDeadline: new Date(now + 18 * HOUR_MS),
+                    acceptedAt: null as Date | null,
+                    deliveryDeadline: null as Date | null,
+                    deliveredAt: null as Date | null,
+                    reviewDeadline: null as Date | null,
+                    completedAt: null as Date | null,
+                    cancelledAt: null as Date | null,
+                    autoCompletedAt: null as Date | null,
+                    disputeDeadline: null as Date | null
+                }
+            case 'in-progress':
+                return {
+                    placedAt: new Date(now - 3 * DAY_MS),
+                    status: 'InProgress' as const,
+                    acceptDeadline: null,
+                    acceptedAt: new Date(now - 2 * DAY_MS),
+                    deliveryDeadline: new Date(now + gig.deliveryDays * DAY_MS - 2 * DAY_MS),
+                    deliveredAt: null,
+                    reviewDeadline: null,
+                    completedAt: null,
+                    cancelledAt: null,
+                    autoCompletedAt: null,
+                    disputeDeadline: null
+                }
+            case 'late':
+                return {
+                    placedAt: new Date(now - 9 * DAY_MS),
+                    status: 'Late' as const,
+                    acceptDeadline: null,
+                    acceptedAt: new Date(now - 8 * DAY_MS),
+                    // Deadline that's already passed — order auto-flipped to Late.
+                    deliveryDeadline: new Date(now - 12 * HOUR_MS),
+                    deliveredAt: null,
+                    reviewDeadline: null,
+                    completedAt: null,
+                    cancelledAt: null,
+                    autoCompletedAt: null,
+                    disputeDeadline: null
+                }
+            case 'delivered':
+                return {
+                    placedAt: new Date(now - 4 * DAY_MS),
+                    status: 'Delivered' as const,
+                    acceptDeadline: null,
+                    acceptedAt: new Date(now - 3 * DAY_MS),
+                    deliveryDeadline: new Date(now - 6 * HOUR_MS),
+                    deliveredAt: new Date(now - 1 * DAY_MS),
+                    reviewDeadline: new Date(now + 48 * HOUR_MS),
+                    completedAt: null,
+                    cancelledAt: null,
+                    autoCompletedAt: null,
+                    disputeDeadline: null
+                }
+            case 'delivered-pending-extension':
+                return {
+                    placedAt: new Date(now - 4 * DAY_MS),
+                    status: 'Delivered' as const,
+                    acceptDeadline: null,
+                    acceptedAt: new Date(now - 3 * DAY_MS),
+                    deliveryDeadline: new Date(now - 6 * HOUR_MS),
+                    deliveredAt: new Date(now - 1 * DAY_MS),
+                    reviewDeadline: new Date(now + 36 * HOUR_MS),
+                    completedAt: null,
+                    cancelledAt: null,
+                    autoCompletedAt: null,
+                    disputeDeadline: null
+                }
+            case 'in-progress-pending-cancellation':
+                return {
+                    placedAt: new Date(now - 2 * DAY_MS),
+                    status: 'InProgress' as const,
+                    acceptDeadline: null,
+                    acceptedAt: new Date(now - 1.5 * DAY_MS),
+                    deliveryDeadline: new Date(now + 4 * DAY_MS),
+                    deliveredAt: null,
+                    reviewDeadline: null,
+                    completedAt: null,
+                    cancelledAt: null,
+                    autoCompletedAt: null,
+                    disputeDeadline: null
+                }
+            case 'awaiting-finalization':
+                return {
+                    placedAt: new Date(now - 8 * DAY_MS),
+                    status: 'AwaitingFinalization' as const,
+                    acceptDeadline: null,
+                    acceptedAt: new Date(now - 7 * DAY_MS),
+                    deliveryDeadline: new Date(now - 4 * DAY_MS),
+                    deliveredAt: new Date(now - 5 * DAY_MS),
+                    // Review window already elapsed — order auto-completed.
+                    reviewDeadline: new Date(now - 2 * DAY_MS),
+                    completedAt: null,
+                    cancelledAt: null,
+                    autoCompletedAt: new Date(now - 2 * DAY_MS),
+                    disputeDeadline: new Date(now + 5 * DAY_MS)
+                }
+            case 'completed':
+                return {
+                    placedAt: new Date(now - 30 * DAY_MS),
+                    status: 'Completed' as const,
+                    acceptDeadline: null,
+                    acceptedAt: new Date(now - 29 * DAY_MS),
+                    deliveryDeadline: new Date(now - 25 * DAY_MS),
+                    deliveredAt: new Date(now - 26 * DAY_MS),
+                    reviewDeadline: new Date(now - 23 * DAY_MS),
+                    completedAt: new Date(now - 25 * DAY_MS),
+                    cancelledAt: null,
+                    autoCompletedAt: null,
+                    disputeDeadline: null
+                }
+            case 'cancelled':
+                return {
+                    placedAt: new Date(now - 14 * DAY_MS),
+                    status: 'Cancelled' as const,
+                    acceptDeadline: null,
+                    acceptedAt: null,
+                    deliveryDeadline: null,
+                    deliveredAt: null,
+                    reviewDeadline: null,
+                    completedAt: null,
+                    cancelledAt: new Date(now - 13 * DAY_MS),
+                    autoCompletedAt: null,
+                    disputeDeadline: null
+                }
+        }
+    })()
+
+    // Insert the order with snapshotted gig fields.
+    const order = await prisma.order.create({
+        data: {
+            buyerId: buyer.id,
+            sellerId: gig.sellerId,
+            gigId: gig.id,
+            gigTitleSnapshot: gig.title,
+            gigPriceVndSnapshot: gig.priceVnd,
+            gigDeliveryDays: gig.deliveryDays,
+            gigCoverKey: null,
+            status: params.status,
+            placedAt: params.placedAt,
+            acceptedAt: params.acceptedAt,
+            deliveredAt: params.deliveredAt,
+            completedAt: params.completedAt,
+            cancelledAt: params.cancelledAt,
+            autoCompletedAt: params.autoCompletedAt,
+            acceptDeadline: params.acceptDeadline,
+            deliveryDeadline: params.deliveryDeadline,
+            reviewDeadline: params.reviewDeadline,
+            disputeDeadline: params.disputeDeadline,
+            cancelledByUserId: params.status === 'Cancelled' ? gig.sellerId : null,
+            cancellationReason: params.status === 'Cancelled' ? "Schedule conflict — can't deliver in time" : null
+        }
+    })
+
+    // Wallet movements: only for the active money paths.
+    //   • Placed/InProgress/Late/Delivered/AwaitingFinalization → buyer
+    //     wallet decremented + escrow increased + Payment Transaction.
+    //   • Completed → buyer's escrow released to seller (80%) + platform (20%)
+    //     with Earning + PlatformFee transactions. Buyer wallet stays
+    //     decremented (already paid at place-order time).
+    //   • Cancelled → buyer wallet refunded + Refund Transaction.
+    const inEscrow = ['PendingReview', 'InProgress', 'Late', 'Delivered', 'AwaitingFinalization']
+    if (inEscrow.includes(params.status)) {
+        await prisma.user.update({
+            where: { id: buyer.id },
+            data: {
+                walletBalance: { decrement: gig.priceVnd },
+                escrowBalance: { increment: gig.priceVnd }
+            }
+        })
+        const buyerAfter = await prisma.user.findUnique({
+            where: { id: buyer.id },
+            select: { walletBalance: true }
+        })
+        await prisma.transaction.create({
+            data: {
+                userId: buyer.id,
+                type: 'Payment',
+                direction: 'Outgoing',
+                status: 'Completed',
+                amountVnd: gig.priceVnd,
+                balanceAfterVnd: buyerAfter?.walletBalance ?? null,
+                orderId: order.id,
+                description: `Held in escrow for order ${order.id}`,
+                createdAt: params.placedAt
+            }
+        })
+    } else if (params.status === 'Completed') {
+        // Settle: buyer paid → seller + platform earn.
+        await prisma.user.update({
+            where: { id: buyer.id },
+            data: { walletBalance: { decrement: gig.priceVnd } }
+        })
+        const platformShare = Math.floor((gig.priceVnd * SEED_PLATFORM_FEE_PCT) / 100)
+        const sellerShare = gig.priceVnd - platformShare
+        await prisma.user.update({
+            where: { id: gig.sellerId },
+            data: { walletBalance: { increment: sellerShare } }
+        })
+        await prisma.user.update({
+            where: { id: PLATFORM_USER_ID },
+            data: { walletBalance: { increment: platformShare } }
+        })
+        const buyerAfter = await prisma.user.findUnique({
+            where: { id: buyer.id },
+            select: { walletBalance: true }
+        })
+        const sellerAfter = await prisma.user.findUnique({
+            where: { id: gig.sellerId },
+            select: { walletBalance: true }
+        })
+        const platformAfter = await prisma.user.findUnique({
+            where: { id: PLATFORM_USER_ID },
+            select: { walletBalance: true }
+        })
+        await prisma.transaction.create({
+            data: {
+                userId: buyer.id,
+                type: 'Payment',
+                direction: 'Outgoing',
+                status: 'Completed',
+                amountVnd: gig.priceVnd,
+                balanceAfterVnd: buyerAfter?.walletBalance ?? null,
+                orderId: order.id,
+                description: `Held in escrow for order ${order.id}`,
+                createdAt: params.placedAt
+            }
+        })
+        await prisma.transaction.create({
+            data: {
+                userId: gig.sellerId,
+                type: 'Earning',
+                direction: 'Incoming',
+                status: 'Completed',
+                amountVnd: sellerShare,
+                balanceAfterVnd: sellerAfter?.walletBalance ?? null,
+                orderId: order.id,
+                description: `Earned from order ${order.id}`,
+                createdAt: params.completedAt!
+            }
+        })
+        await prisma.transaction.create({
+            data: {
+                userId: PLATFORM_USER_ID,
+                type: 'Earning',
+                direction: 'Incoming',
+                status: 'Completed',
+                amountVnd: platformShare,
+                balanceAfterVnd: platformAfter?.walletBalance ?? null,
+                orderId: order.id,
+                description: `Platform fee from order ${order.id}`,
+                createdAt: params.completedAt!
+            }
+        })
+    } else if (params.status === 'Cancelled') {
+        // Buyer never lost money — payment + refund net to zero. We still
+        // record both transactions so the buyer's wallet history shows the
+        // full sequence.
+        const buyerAfter = await prisma.user.findUnique({
+            where: { id: buyer.id },
+            select: { walletBalance: true }
+        })
+        await prisma.transaction.create({
+            data: {
+                userId: buyer.id,
+                type: 'Payment',
+                direction: 'Outgoing',
+                status: 'Completed',
+                amountVnd: gig.priceVnd,
+                balanceAfterVnd: buyerAfter?.walletBalance != null ? buyerAfter.walletBalance - gig.priceVnd : null,
+                orderId: order.id,
+                description: `Held in escrow for order ${order.id}`,
+                createdAt: params.placedAt
+            }
+        })
+        await prisma.transaction.create({
+            data: {
+                userId: buyer.id,
+                type: 'Refund',
+                direction: 'Incoming',
+                status: 'Completed',
+                amountVnd: gig.priceVnd,
+                balanceAfterVnd: buyerAfter?.walletBalance ?? null,
+                orderId: order.id,
+                description: `Refunded from order ${order.id}`,
+                createdAt: params.cancelledAt!
+            }
+        })
+    }
+
+    // Pending extension (seller-initiated; 24h decide window). For the
+    // delivered-pending-extension kind we plant one Pending row so the
+    // buyer's workspace shows the decision card live.
+    if (kind === 'delivered-pending-extension') {
+        const requestedAt = new Date(now - 2 * HOUR_MS)
+        await prisma.extension.create({
+            data: {
+                orderId: order.id,
+                requestedById: gig.sellerId,
+                hoursRequested: 24,
+                reason: 'Need an extra day to polish the deliverables.',
+                status: 'Pending',
+                requestedAt,
+                expiresAt: new Date(requestedAt.getTime() + 22 * HOUR_MS)
+            }
+        })
+        extensions += 1
+    }
+
+    // Pending cancellation (buyer-initiated; seller deciding). Set up for
+    // the in-progress-pending-cancellation kind.
+    if (kind === 'in-progress-pending-cancellation') {
+        const requestedAt = new Date(now - 4 * HOUR_MS)
+        await prisma.cancellation.create({
+            data: {
+                orderId: order.id,
+                requestedById: buyer.id,
+                initiator: 'Buyer',
+                reasonCode: 'BuyerSituationChanged',
+                otherText: null,
+                status: 'Pending',
+                requestedAt,
+                expiresAt: new Date(requestedAt.getTime() + 20 * HOUR_MS)
+            }
+        })
+        cancellations += 1
+    }
+
+    return { extensions, cancellations }
+}
+
 // ── Cleanup (SEED_FORCE) ───────────────────────────────────────────────────
 
 async function cleanupSeedData(): Promise<void> {
@@ -966,9 +1402,33 @@ async function cleanupSeedData(): Promise<void> {
     })
 
     await prisma.savedGig.deleteMany({ where: { userId: { in: seedUserIds } } })
+
+    // Phase 1+2 orders chain: DeliveryFile → Delivery → Extension →
+    // Cancellation → OrderEvent → Order. Wipe explicitly in reverse
+    // dependency order so cleanup is deterministic even if FKs add
+    // RESTRICT semantics later.
+    const seedOrderIds = await prisma.order.findMany({
+        where: {
+            OR: [{ buyerId: { in: seedUserIds } }, { sellerId: { in: seedUserIds } }]
+        },
+        select: { id: true }
+    })
+    const orderIds = seedOrderIds.map((o: { id: string }) => o.id)
+    if (orderIds.length > 0) {
+        await prisma.deliveryFile.deleteMany({
+            where: { delivery: { orderId: { in: orderIds } } }
+        })
+        await prisma.delivery.deleteMany({ where: { orderId: { in: orderIds } } })
+        await prisma.extension.deleteMany({ where: { orderId: { in: orderIds } } })
+        await prisma.cancellation.deleteMany({ where: { orderId: { in: orderIds } } })
+        await prisma.orderEvent.deleteMany({ where: { orderId: { in: orderIds } } })
+        await prisma.transaction.deleteMany({ where: { orderId: { in: orderIds } } })
+        await prisma.order.deleteMany({ where: { id: { in: orderIds } } })
+    }
+
     await prisma.gig.deleteMany({ where: { sellerId: { in: seedUserIds } } })
     await prisma.user.deleteMany({ where: { id: { in: seedUserIds } } })
-    console.log(`  ✓ removed ${seedUserIds.length} seed users and dependents`)
+    console.log(`  ✓ removed ${seedUserIds.length} seed users and ${orderIds.length} orders + dependents`)
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────
@@ -977,17 +1437,27 @@ async function cleanupSeedData(): Promise<void> {
 // Idempotent on keycloakId — runs on EVERY seed pass (even the early-return
 // "already seeded" path) so a fresh DB always has the row. Never deleted by
 // cleanupSeedData since its keycloakId doesn't start with `seed-`.
+//
+// The `username` here is a reserved sentinel (`__platform__`) — the unique
+// constraint on User.username would otherwise reject a second null-username
+// row when exporting dev → prod. See platform.ts for the sentinel scheme.
 async function seedPlatformUser(): Promise<void> {
     await prisma.user.upsert({
         where: { keycloakId: 'platform-fee-collector' },
         create: {
             id: '00000000-0000-0000-0000-000000000001',
             keycloakId: 'platform-fee-collector',
+            username: '__platform__',
             displayName: 'CampusGig Platform',
             isAdmin: false,
             hasSetUsername: true
         },
-        update: {}
+        // Idempotent backfill: existing rows from before the sentinel landed
+        // get patched on the next seed pass. Safe — the platform row is
+        // system-owned, no real user can edit it.
+        update: {
+            username: '__platform__'
+        }
     })
 }
 
@@ -1013,6 +1483,7 @@ async function main(): Promise<void> {
     await seedSavedGigs(users, gigs)
     await seedWalletExtras(users)
     await seedMessages(users)
+    await seedOrders(users)
 
     const elapsed = ((Date.now() - start) / 1000).toFixed(1)
     console.log(`✅ Seed complete in ${elapsed}s`)

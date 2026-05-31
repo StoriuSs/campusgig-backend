@@ -20,10 +20,8 @@ export class UpdateProfileHandler implements ICommandHandler<UpdateProfileComman
         if (command.roleLine !== undefined) updateData.roleLine = command.roleLine
         if (command.languages !== undefined) updateData.languages = command.languages
 
-        // UsernameTakenException is thrown by the repository if unique constraint fails
         const user = await this.userRepo.update(command.userId, updateData)
 
-        // Publish domain event — event handlers will invalidate cache
         this.eventBus.publish(new UserProfileUpdatedEvent(user.id, user.keycloakId))
 
         return user

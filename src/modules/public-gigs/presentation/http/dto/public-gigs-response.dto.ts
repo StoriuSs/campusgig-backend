@@ -83,6 +83,7 @@ export class PublicGigDetailDto {
     @Expose() @IsOptional() @IsNumber() avgRating!: number | null
     @Expose() @IsInt() @Min(0) reviewCount!: number
     @Expose() @IsInt() @Min(0) completedOrderCount!: number
+    @Expose() @IsInt() @Min(0) inQueueOrderCount!: number
     @Expose() @IsBoolean() isSaved!: boolean
 
     @Expose()

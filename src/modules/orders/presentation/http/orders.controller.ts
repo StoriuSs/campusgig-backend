@@ -28,6 +28,8 @@ import { formatOrderCode, validateAndTransform } from '@/shared/utils'
 import {
     AcceptDeliveryCommand,
     AcceptOrderCommand,
+    DecideCancellationCommand,
+    DecideExtensionCommand,
     DeclineOrderCommand,
     DeliverWorkCommand,
     GetActionRequiredCountsQuery,
@@ -35,6 +37,8 @@ import {
     GetOrderQuery,
     ListOrdersQuery,
     PlaceOrderCommand,
+    RequestCancellationCommand,
+    RequestExtensionCommand,
     UpdateDeliveryCommand,
     UploadDeliveryFileCommand
 } from '../../application'
@@ -53,6 +57,8 @@ import {
 } from '../../domain/ports'
 import {
     ActionRequiredCountsResponseDto,
+    DecideCancellationRequestDto,
+    DecideExtensionRequestDto,
     DeclineOrderRequestDto,
     DeliverWorkRequestDto,
     DeliveryFileUrlResponseDto,
@@ -63,6 +69,8 @@ import {
     OrderListResponseDto,
     OrderListRowResponseDto,
     PlaceOrderRequestDto,
+    RequestCancellationRequestDto,
+    RequestExtensionRequestDto,
     StagedDeliveryFileResponseDto
 } from './dto'
 
@@ -341,6 +349,104 @@ export class OrdersController {
             RESPONSE_TYPES.ORDERS_DELIVERIES_LIST,
             MESSAGES.ORDERS.DELIVERIES_LISTED,
             items
+        )
+    }
+
+    // ── Extensions ─────────────────────────────────────────────────────────
+    // Literal-prefix routes come BEFORE the `:orderId/*` ones below so Nest's
+    // router sees `extensions` and `cancellations` as fixed segments rather
+    // than UUIDs for the dynamic :orderId path.
+
+    @Post('extensions/:extensionId/decide')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({
+        summary: 'Buyer decides on a Pending extension request (accept | reject)'
+    })
+    @ApiResponse({ status: 200, type: OrderDetailResponseDto })
+    async decideExtension(
+        @CurrentUser() user: AuthenticatedKeycloakUser,
+        @Param('extensionId', new ParseUUIDPipe()) extensionId: string,
+        @Body() body: DecideExtensionRequestDto
+    ): Promise<ServiceResponse<OrderDetailResponseDto>> {
+        const order: OrderDetail = await this.commandBus.execute(
+            new DecideExtensionCommand(user.local.dbId, extensionId, body.decision)
+        )
+        const dto = await this.toDetailDto(order)
+        return createResponse(
+            RESPONSE_CODES.ORDERS_EXTENSION_DECIDE_SUCCESS,
+            RESPONSE_TYPES.ORDERS_EXTENSION_DECIDE,
+            MESSAGES.ORDERS.EXTENSION_DECIDED,
+            dto
+        )
+    }
+
+    @Post('cancellations/:cancellationId/decide')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({
+        summary:
+            'Counterparty decides on a Pending cancellation request (accept | reject). Accept triggers the full refund.'
+    })
+    @ApiResponse({ status: 200, type: OrderDetailResponseDto })
+    async decideCancellation(
+        @CurrentUser() user: AuthenticatedKeycloakUser,
+        @Param('cancellationId', new ParseUUIDPipe()) cancellationId: string,
+        @Body() body: DecideCancellationRequestDto
+    ): Promise<ServiceResponse<OrderDetailResponseDto>> {
+        const order: OrderDetail = await this.commandBus.execute(
+            new DecideCancellationCommand(user.local.dbId, cancellationId, body.decision)
+        )
+        const dto = await this.toDetailDto(order)
+        return createResponse(
+            RESPONSE_CODES.ORDERS_CANCELLATION_DECIDE_SUCCESS,
+            RESPONSE_TYPES.ORDERS_CANCELLATION_DECIDE,
+            MESSAGES.ORDERS.CANCELLATION_DECIDED,
+            dto
+        )
+    }
+
+    @Post(':orderId/extensions')
+    @HttpCode(HttpStatus.CREATED)
+    @ApiOperation({
+        summary: 'Seller requests a delivery / review extension (12, 24, 48 or 72 hours). Buyer must decide within 24h.'
+    })
+    @ApiResponse({ status: 201, type: OrderDetailResponseDto })
+    async requestExtension(
+        @CurrentUser() user: AuthenticatedKeycloakUser,
+        @Param('orderId', new ParseUUIDPipe()) orderId: string,
+        @Body() body: RequestExtensionRequestDto
+    ): Promise<ServiceResponse<OrderDetailResponseDto>> {
+        const order: OrderDetail = await this.commandBus.execute(
+            new RequestExtensionCommand(user.local.dbId, orderId, body.hoursRequested, body.reason ?? null)
+        )
+        const dto = await this.toDetailDto(order)
+        return createResponse(
+            RESPONSE_CODES.ORDERS_EXTENSION_REQUEST_SUCCESS,
+            RESPONSE_TYPES.ORDERS_EXTENSION_REQUEST,
+            MESSAGES.ORDERS.EXTENSION_REQUESTED,
+            dto
+        )
+    }
+
+    @Post(':orderId/cancellations')
+    @HttpCode(HttpStatus.CREATED)
+    @ApiOperation({
+        summary: 'Either party requests to cancel the order. Counterparty must decide within 24h.'
+    })
+    @ApiResponse({ status: 201, type: OrderDetailResponseDto })
+    async requestCancellation(
+        @CurrentUser() user: AuthenticatedKeycloakUser,
+        @Param('orderId', new ParseUUIDPipe()) orderId: string,
+        @Body() body: RequestCancellationRequestDto
+    ): Promise<ServiceResponse<OrderDetailResponseDto>> {
+        const order: OrderDetail = await this.commandBus.execute(
+            new RequestCancellationCommand(user.local.dbId, orderId, body.reasonCode, body.otherText ?? null)
+        )
+        const dto = await this.toDetailDto(order)
+        return createResponse(
+            RESPONSE_CODES.ORDERS_CANCELLATION_REQUEST_SUCCESS,
+            RESPONSE_TYPES.ORDERS_CANCELLATION_REQUEST,
+            MESSAGES.ORDERS.CANCELLATION_REQUESTED,
+            dto
         )
     }
 

@@ -3,14 +3,16 @@ import { Logger } from '@nestjs/common'
 import { CommandBus } from '@nestjs/cqrs'
 import { Job } from 'bullmq'
 
-import { AutoCancelOrderCommand } from '../../application/commands/auto-cancel-order'
+import {
+    AutoCancelOrderCommand,
+    AutoCompleteOrderCommand,
+    ExpireCancellationCommand,
+    ExpireExtensionCommand,
+    FinalizeOrderCommand,
+    MarkLateCommand
+} from '../../application/commands'
 import { ORDERS_DEADLINES_QUEUE } from './order-jobs.scheduler'
 
-// Single processor handles every deadline job kind for the orders module.
-// `name` on the job (set when added) selects the right command dispatch.
-// Each branch is idempotent at the repo level — the matching command's
-// repo method status-guards and returns null if the order has already
-// moved out of the source state.
 @Processor(ORDERS_DEADLINES_QUEUE)
 export class OrderDeadlinesConsumer extends WorkerHost {
     private readonly logger = new Logger(OrderDeadlinesConsumer.name)
@@ -29,15 +31,31 @@ export class OrderDeadlinesConsumer extends WorkerHost {
                 await this.commandBus.execute(new AutoCancelOrderCommand(orderId))
                 return
             }
-            // Phase-2 kinds — handlers added in T82–T91. Until then, log and
-            // swallow so a stale queued job doesn't fail loudly.
-            case 'delivery-deadline':
-            case 'review-deadline':
-            case 'dispute-deadline':
-            case 'extension-expiry':
-            case 'cancellation-expiry':
-                this.logger.warn(`Phase-2 job kind '${job.name}' arrived in Phase-1 build — ignoring`)
+            case 'delivery-deadline': {
+                const { orderId } = job.data as { orderId: string }
+                await this.commandBus.execute(new MarkLateCommand(orderId))
                 return
+            }
+            case 'review-deadline': {
+                const { orderId } = job.data as { orderId: string }
+                await this.commandBus.execute(new AutoCompleteOrderCommand(orderId))
+                return
+            }
+            case 'dispute-deadline': {
+                const { orderId } = job.data as { orderId: string }
+                await this.commandBus.execute(new FinalizeOrderCommand(orderId))
+                return
+            }
+            case 'extension-expiry': {
+                const { extensionId } = job.data as { extensionId: string }
+                await this.commandBus.execute(new ExpireExtensionCommand(extensionId))
+                return
+            }
+            case 'cancellation-expiry': {
+                const { cancellationId } = job.data as { cancellationId: string }
+                await this.commandBus.execute(new ExpireCancellationCommand(cancellationId))
+                return
+            }
             default:
                 this.logger.warn(`Unknown orders-deadlines job kind: ${job.name}`)
                 return

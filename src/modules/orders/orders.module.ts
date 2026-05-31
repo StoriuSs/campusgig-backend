@@ -12,17 +12,32 @@ import {
     AcceptDeliveryHandler,
     AcceptOrderHandler,
     AutoCancelOrderHandler,
+    AutoCompleteOrderHandler,
+    DecideCancellationHandler,
+    DecideExtensionHandler,
     DeclineOrderHandler,
     DeliverWorkHandler,
+    ExpireCancellationHandler,
+    ExpireExtensionHandler,
+    FinalizeOrderHandler,
     GetActionRequiredCountsHandler,
     GetOrderEventsHandler,
     GetOrderHandler,
     ListOrdersHandler,
+    MarkLateHandler,
     PlaceOrderHandler,
+    RequestCancellationHandler,
+    RequestExtensionHandler,
     UpdateDeliveryHandler,
     UploadDeliveryFileHandler
 } from './application'
 import {
+    CancellationDecidedSocketHandler,
+    CancellationExpiredSocketHandler,
+    CancellationRequestedSocketHandler,
+    ExtensionDecidedSocketHandler,
+    ExtensionExpiredSocketHandler,
+    ExtensionRequestedSocketHandler,
     OrderAcceptedDeliverySocketHandler,
     OrderAcceptedSocketHandler,
     OrderAutoCancelledSocketHandler,
@@ -50,7 +65,17 @@ const CommandHandlers = [
     UpdateDeliveryHandler,
     AcceptDeliveryHandler,
     UploadDeliveryFileHandler,
-    AutoCancelOrderHandler
+    AutoCancelOrderHandler,
+    // Phase 2 transitions
+    RequestExtensionHandler,
+    DecideExtensionHandler,
+    ExpireExtensionHandler,
+    RequestCancellationHandler,
+    DecideCancellationHandler,
+    ExpireCancellationHandler,
+    MarkLateHandler,
+    AutoCompleteOrderHandler,
+    FinalizeOrderHandler
 ]
 
 const QueryHandlers = [GetOrderHandler, ListOrdersHandler, GetActionRequiredCountsHandler, GetOrderEventsHandler]
@@ -65,7 +90,14 @@ const EventHandlers = [
     OrderDeliveryUpdatedSocketHandler,
     OrderAcceptedDeliverySocketHandler,
     OrderAutoCompletedSocketHandler,
-    OrderFinalizedSocketHandler
+    OrderFinalizedSocketHandler,
+    // Phase 2 events
+    ExtensionRequestedSocketHandler,
+    ExtensionDecidedSocketHandler,
+    ExtensionExpiredSocketHandler,
+    CancellationRequestedSocketHandler,
+    CancellationDecidedSocketHandler,
+    CancellationExpiredSocketHandler
 ]
 
 @Module({

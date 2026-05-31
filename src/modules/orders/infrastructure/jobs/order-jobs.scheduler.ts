@@ -12,10 +12,6 @@ export type OrderDeadlineJobKind =
     | 'extension-expiry'
     | 'cancellation-expiry'
 
-// Wraps BullMQ queue access. Each scheduled job uses `jobId =
-// '<kind>:<entityId>'` so atomic remove-by-id and replace-then-add are
-// clean. Idempotent on add (BullMQ rejects duplicate jobId, so callers must
-// remove before re-adding when rescheduling).
 @Injectable()
 export class OrderJobsScheduler {
     private readonly logger = new Logger(OrderJobsScheduler.name)
@@ -23,8 +19,7 @@ export class OrderJobsScheduler {
     constructor(@InjectQueue(ORDERS_DEADLINES_QUEUE) private readonly queue: Queue) {}
 
     private jobId(kind: OrderDeadlineJobKind, entityId: string): string {
-        // BullMQ rejects `:` in custom ids (it's the internal separator for
-        // Redis key segments). `__` keeps the pair scannable in Redis.
+        // `__` separator: BullMQ uses `:` internally for Redis key segments.
         return `${kind}__${entityId}`
     }
 
@@ -54,8 +49,6 @@ export class OrderJobsScheduler {
         }
     }
 
-    // ── AcceptDeadline (Phase 1) ──────────────────────────────────────────
-
     scheduleAcceptDeadline(orderId: string, deadline: Date): Promise<void> {
         return this.addDelayedJob('accept-deadline', orderId, deadline, { orderId })
     }
@@ -63,8 +56,6 @@ export class OrderJobsScheduler {
     removeAcceptDeadline(orderId: string): Promise<void> {
         return this.removeJob('accept-deadline', orderId)
     }
-
-    // ── Phase-2 stubs (live but not yet scheduled by any caller) ──────────
 
     scheduleDeliveryDeadline(orderId: string, deadline: Date): Promise<void> {
         return this.addDelayedJob('delivery-deadline', orderId, deadline, { orderId })

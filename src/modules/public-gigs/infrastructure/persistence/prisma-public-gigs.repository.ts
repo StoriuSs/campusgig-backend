@@ -19,7 +19,6 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
             filters
         const skip = (page - 1) * pageSize
 
-        // Base where clause — only Active, non-deleted gigs
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const where: any = { status: 'Active', deletedAt: null }
 
@@ -28,7 +27,7 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
         if (maxPrice !== undefined) where.priceVnd = { ...where.priceVnd, lte: maxPrice }
         if (maxDelivery !== undefined) where.deliveryDays = { lte: maxDelivery }
 
-        // endorsedOnly: pre-fetch endorsed seller IDs (no Gig→User relation in Prisma)
+        // No Gig→User relation in Prisma; pre-fetch endorsed seller IDs.
         if (endorsedOnly) {
             const endorsedUsers = await this.prisma.user.findMany({
                 where: { endorsedAt: { not: null }, isAdmin: false, deletedAt: null },
@@ -39,7 +38,6 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
 
         if (sellerId) where.sellerId = sellerId
 
-        // Full-text search: match title or description (case-insensitive)
         if (q && q.trim()) {
             const term = q.trim()
             where.OR = [
@@ -70,7 +68,6 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
             return { items: [], total, page, pageSize }
         }
 
-        // Batch-load sellers (no Gig→User relation)
         const sellerIds = Array.from(new Set(rows.map((r) => r.sellerId)))
         const sellers = await this.prisma.user.findMany({
             where: { id: { in: sellerIds } },
@@ -78,7 +75,6 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
         })
         const sellerById = new Map(sellers.map((s) => [s.id, s]))
 
-        // Compute isSaved set
         const savedGigIds = new Set<string>()
         if (userId) {
             const gigIds = rows.map((r) => r.id)
@@ -97,7 +93,7 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
                 priceVnd: row.priceVnd,
                 deliveryDays: row.deliveryDays,
                 coverImageKey: row.images[0]?.imageKey ?? null,
-                avgRating: null, // F11 will populate
+                avgRating: null,
                 reviewCount: 0,
                 isSaved: savedGigIds.has(row.id),
                 seller: {
@@ -124,7 +120,6 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
         })
         if (!row) return null
 
-        // Fetch seller, category, and compute carousels in parallel
         const [seller, category, similarRows, otherRows] = await Promise.all([
             this.prisma.user.findUnique({
                 where: { id: row.sellerId },
@@ -158,12 +153,28 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
             })
         ])
 
-        // Count active gigs by seller
         const sellerGigCount = await this.prisma.gig.count({
             where: { sellerId: row.sellerId, status: 'Active', deletedAt: null }
         })
 
-        // Batch-load sellers for carousels
+        // "In queue" = accepted but not yet finished (excludes Completed/Cancelled).
+        const [gigCompletedOrderCount, gigInQueueOrderCount, sellerCompletedOrderCount] = await Promise.all([
+            this.prisma.order.count({
+                where: { gigId: id, status: 'Completed' }
+            }),
+            this.prisma.order.count({
+                where: {
+                    gigId: id,
+                    status: {
+                        in: ['InProgress', 'Late', 'Delivered', 'AwaitingFinalization', 'Frozen']
+                    }
+                }
+            }),
+            this.prisma.order.count({
+                where: { sellerId: row.sellerId, status: 'Completed' }
+            })
+        ])
+
         const carouselSellerIds = Array.from(
             new Set([...similarRows.map((r) => r.sellerId), ...otherRows.map((r) => r.sellerId)])
         )
@@ -176,7 +187,6 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
                 : []
         const carouselSellerById = new Map(carouselSellers.map((s) => [s.id, s]))
 
-        // Compute isSaved
         let isSaved = false
         if (userId) {
             const saved = await this.prisma.savedGig.findUnique({
@@ -216,7 +226,8 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
             categoryName: category?.name ?? '',
             avgRating: null,
             reviewCount: 0,
-            completedOrderCount: 0,
+            completedOrderCount: gigCompletedOrderCount,
+            inQueueOrderCount: gigInQueueOrderCount,
             isSaved,
             images: row.images.map((i) => ({
                 id: i.id,
@@ -242,7 +253,7 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
                 gigCount: sellerGigCount,
                 avgRating: null,
                 reviewCount: 0,
-                completedOrderCount: 0
+                completedOrderCount: sellerCompletedOrderCount
             },
             similarGigs: similarRows.map(toSummary),
             otherBySellerGigs: otherRows.map(toSummary)

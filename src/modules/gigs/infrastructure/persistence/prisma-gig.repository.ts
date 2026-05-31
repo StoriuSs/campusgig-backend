@@ -23,18 +23,9 @@ import {
 import { Prisma } from '@/generated/prisma/client'
 import { GigMapper, GigImageMapper, GigBulletMapper, GigFaqMapper } from '../mappers/gig.mapper'
 
-/**
- * Prisma adapter for the Gig aggregate. Hides Prisma-specific concerns
- * (transactions, status filter translation, cover-image recompute) from
- * the application layer.
- */
 @Injectable()
 export class PrismaGigRepository implements GigRepositoryPort {
     constructor(private readonly prisma: PrismaService) {}
-
-    // ───────────────────────────────────────────────────────────────────────
-    // Reads
-    // ───────────────────────────────────────────────────────────────────────
 
     async findById(id: string): Promise<GigEntity | null> {
         const row = await this.prisma.gig.findFirst({ where: { id, deletedAt: null } })
@@ -120,10 +111,6 @@ export class PrismaGigRepository implements GigRepositoryPort {
         return { all, active, paused, pending, rejected }
     }
 
-    // ───────────────────────────────────────────────────────────────────────
-    // Writes
-    // ───────────────────────────────────────────────────────────────────────
-
     async create(data: CreateGigData, nextStatus: GigStatus): Promise<GigEntity> {
         return this.prisma.$transaction(async (tx) => {
             const now = new Date()
@@ -140,7 +127,6 @@ export class PrismaGigRepository implements GigRepositoryPort {
                 }
             })
 
-            // Attach images: set gigId + position 0..n-1.
             for (let i = 0; i < data.imageIds.length; i++) {
                 await tx.gigImage.update({
                     where: { id: data.imageIds[i] },
@@ -148,13 +134,11 @@ export class PrismaGigRepository implements GigRepositoryPort {
                 })
             }
 
-            // Cache coverImageId from the first image.
             const updated = await tx.gig.update({
                 where: { id: gig.id },
                 data: { coverImageId: data.imageIds[0] ?? null }
             })
 
-            // Insert bullets + faqs in received order.
             if (data.bullets.length > 0) {
                 await tx.gigBullet.createMany({
                     data: data.bullets.map((text, position) => ({ gigId: gig.id, text, position }))
@@ -193,7 +177,6 @@ export class PrismaGigRepository implements GigRepositoryPort {
                 }
             }
 
-            // Replace-all semantics on bullets / faqs / images.
             if (patch.bullets !== undefined) {
                 await tx.gigBullet.deleteMany({ where: { gigId: id } })
                 if (patch.bullets.length > 0) {
@@ -217,9 +200,6 @@ export class PrismaGigRepository implements GigRepositoryPort {
             }
 
             if (patch.imageIds !== undefined) {
-                // Detach all current images (re-orphan them or delete? Re-orphan for simplicity —
-                // the orphan cleanup job will reap any that aren't re-attached). For now: any
-                // image not in the new list gets deleted; new ids get attached + positioned.
                 const current = await tx.gigImage.findMany({ where: { gigId: id } })
                 const newSet = new Set(patch.imageIds)
                 const toRemove = current.filter((i) => !newSet.has(i.id))
@@ -271,10 +251,6 @@ export class PrismaGigRepository implements GigRepositoryPort {
             }
         })
     }
-
-    // ───────────────────────────────────────────────────────────────────────
-    // Admin Gig Queue (Feature 05)
-    // ───────────────────────────────────────────────────────────────────────
 
     async approve(id: string): Promise<GigEntity> {
         const updated = await this.prisma.gig.update({
@@ -415,10 +391,6 @@ export class PrismaGigRepository implements GigRepositoryPort {
         }
     }
 
-    // ───────────────────────────────────────────────────────────────────────
-    // Images
-    // ───────────────────────────────────────────────────────────────────────
-
     async createOrphanImage(data: {
         imageKey: string
         width: number
@@ -449,7 +421,6 @@ export class PrismaGigRepository implements GigRepositoryPort {
 
     async reorderImages(gigId: string, imageIds: string[]): Promise<void> {
         await this.prisma.$transaction(async (tx) => {
-            // Verify ownership of every image
             const current = await tx.gigImage.findMany({ where: { gigId } })
             const currentIdSet = new Set(current.map((i) => i.id))
             for (const imageId of imageIds) {
@@ -458,7 +429,6 @@ export class PrismaGigRepository implements GigRepositoryPort {
                 }
             }
             if (imageIds.length !== current.length) {
-                // Reorder must reference every image exactly once.
                 throw new Error(
                     `Reorder list length mismatch: gig has ${current.length} images, got ${imageIds.length}`
                 )
@@ -485,10 +455,6 @@ export class PrismaGigRepository implements GigRepositoryPort {
         return rows.map((r) => GigImageMapper.toDomain(r))
     }
 
-    // ───────────────────────────────────────────────────────────────────────
-    // Helpers
-    // ───────────────────────────────────────────────────────────────────────
-
     private statusFilterToWhere(filter: MyGigsStatusFilter): {
         status?: { in?: string[]; equals?: string; not?: string }
     } {
@@ -508,12 +474,7 @@ export class PrismaGigRepository implements GigRepositoryPort {
         }
     }
 
-    /**
-     * Category + search filters shared by the admin list and its per-status
-     * counts. Excludes the status clause and always hides soft-deleted gigs.
-     * Search has no Gig→User relation to lean on, so seller-name matches are
-     * resolved to IDs via a follow-up query and OR'd with a title match.
-     */
+    // No Gig→User relation: seller-name search resolves to IDs via a follow-up query.
     private async buildAdminBaseWhere(filters: AdminQueueFilters): Promise<Prisma.GigWhereInput> {
         const where: Prisma.GigWhereInput = { deletedAt: null }
         if (filters.categoryId) {
@@ -569,10 +530,7 @@ export class PrismaGigRepository implements GigRepositoryPort {
                 return { createdAt: 'asc' }
             case 'recentlyUpdated':
                 return { updatedAt: 'desc' }
-            // mostOrders / highestRated / highestEarnings need Feature 09/11 data.
-            // Until then they have no real column to sort on, so they fall back
-            // to newest-first (stable no-op). When orders/reviews land, this
-            // switch gets joins/aggregates for those cases.
+            // No order/review columns yet — fall back to newest-first until F09/F11 land.
             case 'mostOrders':
             case 'highestRated':
             case 'highestEarnings':

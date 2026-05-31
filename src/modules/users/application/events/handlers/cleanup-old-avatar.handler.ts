@@ -4,12 +4,6 @@ import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
 import { AvatarUploadedEvent } from '../avatar-uploaded.event'
 
-/**
- * Event Handler: Cleanup Old Avatar
- *
- * Reacts to AvatarUploaded events.
- * Enqueues a BullMQ job to delete the previous avatar file from storage.
- */
 @EventsHandler(AvatarUploadedEvent)
 export class CleanupOldAvatarHandler implements IEventHandler<AvatarUploadedEvent> {
     private readonly logger = new Logger(CleanupOldAvatarHandler.name)
@@ -17,7 +11,7 @@ export class CleanupOldAvatarHandler implements IEventHandler<AvatarUploadedEven
     constructor(@InjectQueue('file-cleanup') private readonly cleanupQueue: Queue) {}
 
     async handle(event: AvatarUploadedEvent): Promise<void> {
-        // Support legacy URLs during migration
+        // Strip legacy URL prefix that predates the key-only storage convention.
         const filePath = event.previousAvatarUrl.includes('uploads/')
             ? event.previousAvatarUrl.split('uploads/')[1]
             : event.previousAvatarUrl

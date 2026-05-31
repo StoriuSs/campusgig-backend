@@ -63,6 +63,8 @@ export interface PublicGigDetail {
     avgRating: number | null
     reviewCount: number
     completedOrderCount: number
+    // Accepted but not yet finished (excludes Completed/Cancelled).
+    inQueueOrderCount: number
     isSaved: boolean
     images: PublicGigImage[]
     bullets: PublicGigBullet[]

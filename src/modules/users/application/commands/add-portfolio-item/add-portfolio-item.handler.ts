@@ -19,9 +19,7 @@ export class AddPortfolioItemHandler implements ICommandHandler<AddPortfolioItem
     ) {}
 
     async execute(command: AddPortfolioItemCommand): Promise<PortfolioItemEntity> {
-        // Enforce cap BEFORE the upload — don't waste S3 bandwidth on items
-        // that won't fit. Same race-window caveat as AddSkillHandler (could
-        // briefly bump to 10 under concurrent uploads from the same user).
+        // Check cap before uploading to avoid wasting S3 bandwidth.
         const count = await this.userRepo.countPortfolioItems(command.userId)
         if (count >= MAX_PORTFOLIO_ITEMS_PER_USER) {
             throw new MaxPortfolioItemsReachedException()

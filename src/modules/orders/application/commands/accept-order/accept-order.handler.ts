@@ -14,10 +14,6 @@ export class AcceptOrderHandler implements ICommandHandler<AcceptOrderCommand> {
     ) {}
 
     async execute(command: AcceptOrderCommand): Promise<OrderDetail> {
-        // Repo validates: viewer must be the seller, status must be
-        // PendingReview. Inside the same $transaction it flips status,
-        // computes deliveryDeadline, removes the AcceptDeadlineJob, schedules
-        // the DeliveryDeadlineJob, writes the OrderEvent + system message.
         const order = await this.repo.acceptOrder(command.orderId, command.viewerId)
         this.eventBus.publish(new OrderAcceptedEvent(order, command.viewerId))
         return order

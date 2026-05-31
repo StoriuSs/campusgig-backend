@@ -9,6 +9,7 @@ import { PrismaService } from '../../persistence/database/prisma.service'
 import { KeycloakTokenPayload, KeycloakUserData, LocalUserData, AuthenticatedKeycloakUser } from '@/shared/types'
 import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager'
 import { isMetricsRequest } from '@/shared/utils'
+import { adminSentinelUsername } from '@/shared/constants/platform'
 
 @Injectable()
 export class KeycloakAuthGuard implements CanActivate {
@@ -27,12 +28,10 @@ export class KeycloakAuthGuard implements CanActivate {
         this.issuer = this.configService.get<string>('keycloak.issuer')!
         this.audience = this.configService.get<string>('keycloak.clientId')!
 
-        // Create JWKS client (caches keys automatically)
         this.jwks = createRemoteJWKSet(new URL(jwksUri))
     }
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
-        // Check if route is public
         const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
             context.getHandler(),
             context.getClass()
@@ -44,7 +43,6 @@ export class KeycloakAuthGuard implements CanActivate {
 
         const request = context.switchToHttp().getRequest()
 
-        // Allow /metrics endpoint for Prometheus scraping
         if (isMetricsRequest(request.url)) {
             return true
         }
@@ -61,21 +59,15 @@ export class KeycloakAuthGuard implements CanActivate {
         }
 
         try {
-            // Verify JWT using Keycloak's public keys
             const { payload } = await jwtVerify(token, this.jwks, {
                 issuer: this.issuer,
                 audience: this.audience
             })
 
             const keycloakPayload = payload as KeycloakTokenPayload
-
-            // Extract Keycloak user data from token
             const keycloakUser = this.extractKeycloakUser(keycloakPayload)
-
-            // JIT Provisioning: Sync user to local database
             const localUser = await this.syncUserToDatabase(keycloakUser)
 
-            // Attach combined user data to request
             request.user = {
                 ...keycloakUser,
                 local: localUser
@@ -111,7 +103,7 @@ export class KeycloakAuthGuard implements CanActivate {
 
     private extractKeycloakUser(payload: KeycloakTokenPayload): KeycloakUserData {
         return {
-            id: payload.sub, // Use this as keycloakId in User table
+            id: payload.sub,
             username: payload.preferred_username || payload.email || 'unknown',
             email: payload.email || '',
             name: payload.name || payload.preferred_username || 'Unknown User',
@@ -120,15 +112,9 @@ export class KeycloakAuthGuard implements CanActivate {
         }
     }
 
-    /**
-     * JIT (Just-in-Time) Provisioning: Sync Keycloak user to local database
-     * - Creates new user if they don't exist (first login after registration)
-     * - Returns local user preferences
-     * - Caches the result to reduce database load
-     */
+    // JIT provisioning: create-or-reconcile the local User row from the Keycloak token.
     private async syncUserToDatabase(keycloakUser: KeycloakUserData): Promise<LocalUserData> {
-        // Cache key includes the admin-role bit so a role change in Keycloak
-        // forces a cache miss → reconciliation runs on the next request.
+        // Admin-role bit in the key so a Keycloak role change forces reconciliation.
         const tokenHasAdminRoleForCacheKey = keycloakUser.roles.includes('admin') ? '1' : '0'
         const cacheKey = `user:keycloak:${keycloakUser.id}:a${tokenHasAdminRoleForCacheKey}`
 
@@ -140,12 +126,10 @@ export class KeycloakAuthGuard implements CanActivate {
         } catch (_error) {
             this.logger.error(`Cache get failed: ${(_error as Error).message}`)
         }
-        // check if an user with the same keycloakId exists
         let user = await this.prisma.user.findUnique({
             where: { keycloakId: keycloakUser.id }
         })
-        // if the user exists BUT was soft-deleted --> the keycloak account hasn't been deleted yet, either it's
-        // still being scheduled for deletion or there is an error that caused the failed deletion. Either way, we shouldn't let this account in
+        // Soft-deleted row = Keycloak deletion is pending or failed. Block login.
         if (user && user.deletedAt) {
             throw new CustomException({
                 code: ERROR_CODES.AUTH_ACCOUNT_DISABLED,
@@ -158,29 +142,39 @@ export class KeycloakAuthGuard implements CanActivate {
         const tokenHasAdminRole = keycloakUser.roles.includes('admin')
 
         if (!user) {
-            // First-time JIT provisioning. If the token carries the `admin` realm role,
-            // mark the row as admin AND set hasSetUsername=true so the buyer/seller
-            // first-login flow (UsernameSetupModal) never gates them.
+            // Admins skip the username-setup modal and get a sentinel handle.
             user = await this.prisma.user.create({
                 data: {
                     keycloakId: keycloakUser.id,
                     email: keycloakUser.email,
                     ...(keycloakUser.name ? { displayName: keycloakUser.name } : {}),
-                    ...(tokenHasAdminRole ? { isAdmin: true, hasSetUsername: true } : {})
+                    ...(tokenHasAdminRole
+                        ? {
+                              isAdmin: true,
+                              hasSetUsername: true,
+                              username: adminSentinelUsername(keycloakUser.id)
+                          }
+                        : {})
                 }
             })
         } else {
-            // Reconcile drift on every authed request. Only write when something
-            // actually differs — keeps the hot path cheap.
-            const patch: { email?: string; isAdmin?: boolean; hasSetUsername?: boolean } = {}
+            // Reconcile drift; only write when something differs.
+            const patch: {
+                email?: string
+                isAdmin?: boolean
+                hasSetUsername?: boolean
+                username?: string
+            } = {}
             if (user.email !== keycloakUser.email) patch.email = keycloakUser.email
             if (user.isAdmin !== tokenHasAdminRole) {
                 patch.isAdmin = tokenHasAdminRole
-                // Promotion: also flip hasSetUsername so the modal doesn't bounce them
-                // on next reload. We don't undo this on demotion — if a user lost admin,
-                // they may want to use a username they had pre-promotion.
+                // Promotion: skip the username modal and backfill the sentinel.
+                // Demotion: don't undo — they may want their pre-promotion username back.
                 if (tokenHasAdminRole && !user.hasSetUsername) {
                     patch.hasSetUsername = true
+                }
+                if (tokenHasAdminRole && !user.username) {
+                    patch.username = adminSentinelUsername(keycloakUser.id)
                 }
             }
             if (Object.keys(patch).length > 0) {
@@ -203,7 +197,6 @@ export class KeycloakAuthGuard implements CanActivate {
         }
 
         try {
-            // Cache for 1 hour (default) or use config
             const ttl = this.configService.get<number>('redis.ttl') || 3600
             await this.cache.set(cacheKey, localUserData, ttl * 1000)
         } catch (_error) {

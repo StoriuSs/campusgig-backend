@@ -17,9 +17,6 @@ export class DeleteGigImageHandler implements ICommandHandler<DeleteGigImageComm
             throw new ImageNotOwnedException(command.imageId)
         }
 
-        // Owner check:
-        //   - Orphan: caller must be uploader
-        //   - Attached: caller must be the gig's seller (we resolve via findById)
         if (image.isOrphan) {
             if (image.uploaderId !== command.callerId) {
                 throw new ImageNotOwnedException(command.imageId)
@@ -31,8 +28,7 @@ export class DeleteGigImageHandler implements ICommandHandler<DeleteGigImageComm
             }
         }
 
-        // Delete the storage object first; if the DB delete fails afterwards
-        // we have an orphan S3 object — the cleanup job will pick it up next sweep.
+        // Storage-first: if DB delete fails, the cleanup job will reclaim the orphan S3 object.
         try {
             await this.storage.deleteFile(image.imageKey)
         } catch {

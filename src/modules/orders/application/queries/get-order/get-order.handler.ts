@@ -13,8 +13,7 @@ export class GetOrderHandler implements IQueryHandler<GetOrderQuery> {
     ) {}
 
     async execute(query: GetOrderQuery): Promise<OrderDetail> {
-        // Collapses "doesn't exist" and "not a participant" to NotFound so the
-        // 404 response doesn't leak existence to unauthorized callers.
+        // 404-not-403: collapses "not found" and "not a participant" so existence isn't leaked.
         const order = await this.repo.findByIdForViewer(query.orderId, query.viewerId)
         if (!order) throw new OrderNotFoundException(query.orderId)
         return order

@@ -2,9 +2,8 @@ model User {
   id         String @id @default(uuid())
   keycloakId String @unique // Links to Keycloak user (token.sub)
 
-  // Profile / searchable fields (store when app needs search/profile views)
   username       String? @unique
-  email          String? // This is set as not unique on purpose for the soft-delete flow since Keycloak would make sure there is no duplicate active emails anyway
+  email          String? // Not unique intentionally — soft-delete flow; Keycloak deduplicates active accounts.
   displayName    String?
   avatarUrl      String? // Stores the S3 OBJECT KEY, not a URL. Controller resolves to a presigned GET URL on read. Field name is legacy from the boilerplate; rename to avatarKey is a post-MVP cleanup.
   bio            String?
@@ -12,17 +11,15 @@ model User {
   // emailVerified Boolean  @default(false)
   // lastSyncedAt  DateTime? @db.Timestamptz(6)
 
-  // Profile fields added in Feature 02 (Profile + First-Login + Dashboard skeleton)
-  location  String? // Free text (e.g. "Ho Chi Minh City"). Optional. Max 100 chars (app-side).
-  roleLine  String? // Short tagline shown on profile header. Max 100 chars (app-side).
-  languages String? // Free text (e.g. "Vietnamese (Native), English (Fluent)"). Max 200 chars (app-side).
+  location  String?
+  roleLine  String?
+  languages String?
 
-  // Endorsed-badge fields — column added now to avoid migration later. Admin-grant UI ships in Feature 13.
+  // Endorsed-badge fields — column pre-added; admin-grant UI ships in F13.
   endorsedAt DateTime? @db.Timestamptz(6)
-  endorsedBy String? // Admin user ID who granted endorsement. FK enforcement deferred until admin role exists.
+  endorsedBy String? // Admin user ID; FK enforcement deferred until admin role exists.
 
-  // Admin role flag — set by JIT provisioner when the JWT carries the `admin` realm role.
-  // Filter buyer/seller queries with `WHERE isAdmin = false` to keep admin records out of Browse, etc.
+  // Set by JIT provisioner on JWT `admin` realm role. Filter buyer/seller queries with isAdmin=false.
   isAdmin Boolean @default(false)
 
   // Wallet (Feature 07) — all VND, integer-only. walletBalance is the withdrawable
@@ -34,8 +31,7 @@ model User {
   escrowBalance            Int @default(0)
   pendingWithdrawalBalance Int @default(0)
 
-  // Withdrawal target — set once during first withdraw, editable afterwards
-  // (blocked while a Pending withdrawal exists). Single bank account per user in v1.
+  // Set on first withdrawal; editable but blocked while a Pending withdrawal exists. One account per user in v1.
   bankName          String?
   bankAccountNumber String?
   bankAccountHolder String?
@@ -45,31 +41,20 @@ model User {
   deletedAt DateTime? @db.Timestamptz(6)
   deletedBy String?
 
-  // Relations (Feature 02)
   skills         UserSkill[]
   portfolioItems PortfolioItem[]
-
-  // Relations (Feature 06)
-  savedGigs SavedGig[]
-
-  // Relations (Feature 07)
+  savedGigs      SavedGig[]
   transactions         Transaction[]
   withdrawalRequests   WithdrawalRequest[] @relation("WithdrawalRequester")
   processedWithdrawals WithdrawalRequest[] @relation("WithdrawalProcessor")
 
-  // Feature 08 — Messaging. Updated on last socket disconnect; null when never
-  // connected since the column shipped. Frontend renders "Online now" while a
-  // socket is open (real-time via Redis presence SET) and falls back to
-  // "Last seen <ago>" using this column when offline.
+  // Updated on last socket disconnect; null if never connected. Falls back to "Last seen <ago>" when offline.
   lastSeenAt DateTime? @db.Timestamptz(6)
 
-  // Relations (Feature 08)
   sentMessages         Message[]           @relation("MessageSender")
   threadParticipationA MessageThread[]     @relation("ThreadUserA")
   threadParticipationB MessageThread[]     @relation("ThreadUserB")
   messageReadCursors   MessageReadCursor[]
-
-  // Relations (Feature 09/10)
   ordersAsBuyer  Order[] @relation("OrderBuyer")
   ordersAsSeller Order[] @relation("OrderSeller")
 
@@ -87,8 +72,8 @@ model User {
 model UserSkill {
   id        String   @id @default(uuid())
   userId    String
-  name      String // Free-form, max 30 chars (app-side validation).
-  position  Int // 0-based display order. v1 uses creation order; drag-reorder is a future feature.
+  name      String
+  position  Int // 0-based display order; drag-reorder is a future feature.
   createdAt DateTime @default(now()) @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

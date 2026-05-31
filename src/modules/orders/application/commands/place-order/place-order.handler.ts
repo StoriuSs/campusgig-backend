@@ -14,10 +14,6 @@ export class PlaceOrderHandler implements ICommandHandler<PlaceOrderCommand> {
     ) {}
 
     async execute(command: PlaceOrderCommand): Promise<OrderDetail> {
-        // All gig / wallet / seller guards live in the repo's $transaction
-        // so the check + side-effects happen under one Serializable lock.
-        // Repo throws GigNotPurchasable / InsufficientWalletBalance /
-        // SellerCannotOrderOwnGig on the relevant conditions.
         const result: { order: OrderDetail; refs: MoneyMoveRefs } = await this.repo.placeOrder({
             buyerId: command.buyerId,
             gigId: command.gigId,
