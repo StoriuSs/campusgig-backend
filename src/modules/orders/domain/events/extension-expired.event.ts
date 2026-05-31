@@ -1,5 +1,8 @@
-import type { ExtensionItem } from '../ports/orders.repository.port'
+import type { ExtensionItem, OrderDetail } from '../ports/orders.repository.port'
 
 export class ExtensionExpiredEvent {
-    constructor(public readonly extension: ExtensionItem) {}
+    constructor(
+        public readonly order: OrderDetail,
+        public readonly extension: ExtensionItem
+    ) {}
 }

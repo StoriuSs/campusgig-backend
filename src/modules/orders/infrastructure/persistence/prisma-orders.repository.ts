@@ -9,6 +9,7 @@ import { WALLET_REPOSITORY_PORT, WalletRepositoryPort } from '@/modules/wallet/d
 
 import {
     CancellationItem,
+    CancellationReasonCode,
     DeliveryItem,
     DeliveryFileItem,
     ExtensionItem,
@@ -28,15 +29,14 @@ import {
     InvalidTransitionException,
     NotAParticipantException,
     OrderNotFoundException,
+    PendingCancellationAlreadyExistsException,
+    PendingExtensionAlreadyExistsException,
     SellerCannotOrderOwnGigException
 } from '../../domain/exceptions'
 import { OrderJobsScheduler } from '../jobs/order-jobs.scheduler'
 
 const PLATFORM_FEE_PCT = 20
 
-// Renders the actor's short display name for the chat system-event pill.
-// Falls back to username then to "User" if both are missing (shouldn't happen
-// at the point of inserts since we always have a logged-in actor).
 function actorName(user: { displayName: string | null; username: string | null } | null | undefined): string {
     if (!user) return 'User'
     const dn = user.displayName?.trim()
@@ -44,12 +44,27 @@ function actorName(user: { displayName: string | null; username: string | null }
     return user.username ?? 'User'
 }
 
-// Hours → ms
 const ACCEPT_WINDOW_MS = 24 * 60 * 60 * 1000
 const REVIEW_WINDOW_MS = 72 * 60 * 60 * 1000
 const DISPUTE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 const EXTENSION_WINDOW_MS = 24 * 60 * 60 * 1000
 const CANCELLATION_WINDOW_MS = 24 * 60 * 60 * 1000
+
+const CANCELLATION_REASON_LABELS: Record<CancellationReasonCode, string> = {
+    BuyerSituationChanged: 'My situation changed — I no longer need this',
+    BuyerOrderedByMistake: 'Ordered by mistake',
+    BuyerAgreedInChat: 'We agreed to cancel in chat',
+    BuyerOther: 'Other',
+    SellerScheduleConflict: "Schedule conflict — can't deliver in time",
+    SellerRequirementsMismatch: 'Requirements turned out to be different than expected',
+    SellerAgreedInChat: 'We agreed to cancel in chat',
+    SellerOther: 'Other'
+}
+
+function formatCancellationReason(code: CancellationReasonCode, otherText: string | null): string {
+    const label = CANCELLATION_REASON_LABELS[code]
+    return otherText ? `${label} — ${otherText}` : label
+}
 
 @Injectable()
 export class PrismaOrdersRepository implements OrdersRepositoryPort {
@@ -60,19 +75,10 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
         @Inject(MESSAGING_REPOSITORY_PORT)
         private readonly messagingRepo: MessagingRepositoryPort,
         private readonly jobs: OrderJobsScheduler,
-        // Pushes system-event chat pills (order_placed, order_accepted, …) to
-        // both parties in real time. Emission happens AFTER the $transaction
-        // commits so a rolled-back transaction never publishes a phantom
-        // message. Same wire shape as the messaging module's existing
-        // `message:new` event so the workspace chat panel needs no new
-        // handler — it just appends the message as it does for chat replies.
+        // Emit AFTER $transaction commits so rollbacks don't publish phantom messages.
         private readonly socketEmitter: SocketEmitter
     ) {}
 
-    // Broadcast the just-persisted system event to the buyer↔seller thread
-    // room. Shape mirrors MessageSentSocketHandler; system events have no
-    // attachments and are unread-by-recipient by definition (they have no
-    // sender to "read" them on the other side).
     private emitSystemEventMessage(threadId: string, message: MessageItem): void {
         const wirePayload = {
             threadId,
@@ -89,8 +95,6 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
         }
         this.socketEmitter.emitToThread(threadId, 'message:new', wirePayload)
     }
-
-    // ── Mappers ────────────────────────────────────────────────────────────
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private toParty(u: any) {
@@ -165,7 +169,7 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             id: e.id,
             orderId: e.orderId,
             requestedById: e.requestedById,
-            daysRequested: e.daysRequested,
+            hoursRequested: e.hoursRequested,
             reason: e.reason ?? null,
             status: e.status,
             expiresAt: e.expiresAt,
@@ -191,8 +195,6 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             decidedById: c.decidedById ?? null
         }
     }
-
-    // ── Default includes ───────────────────────────────────────────────────
 
     private get orderIncludes() {
         return {
@@ -231,8 +233,6 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             }
         }
     }
-
-    // ── Reads ──────────────────────────────────────────────────────────────
 
     async findByIdForViewer(orderId: string, viewerId: string): Promise<OrderDetail | null> {
         const o = await this.prisma.order.findUnique({
@@ -278,8 +278,6 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
 
         const where = { ...partyFilter, ...statusWhere, ...queryWhere }
 
-        // Counts pass — one $queryRaw groups by status. Cheap because
-        // (buyerId|sellerId, status, placedAt) index satisfies the partition.
         const rawCounts = await this.prisma.order.groupBy({
             by: ['status'],
             where: { ...partyFilter, ...queryWhere },
@@ -362,18 +360,12 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             }
         })
 
-        // The actionRequiredOnly filter is applied AFTER mapping because the
-        // computation depends on the viewer-role join we just resolved.
-        // Strict `=== true` guard keeps the repo defensive even if a caller
-        // ever passes a non-boolean by mistake — the global ValidationPipe's
-        // implicit conversion of boolean fields is famously friendly to
-        // truthy strings (`Boolean('false') === true`), so the orders DTO
-        // accepts the wire string verbatim and the controller normalizes it.
+        // Filter post-map because actionRequired depends on the viewer-role join.
         const filtered = input.actionRequiredOnly === true ? items.filter((r) => r.actionRequired) : items
 
         return {
             items: filtered,
-            total: counts.all, // total across all statuses for this side
+            total: counts.all,
             counts
         }
     }
@@ -389,16 +381,16 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
         sellerId: string
         buyerId: string
     }): boolean {
-        // Per SRS § Order Lifecycle action-required-dot rules
+        // Viewer is next-mover OR is the decider on a pending request from the other party.
         if (args.status === 'PendingReview' && args.side === 'seller') return true
         if (args.status === 'Delivered' && args.side === 'buyer') return true
-        if (args.status === 'InProgress' || args.status === 'Late') {
-            if (args.pendingExt && args.side === 'buyer') return true
-            if (args.pendingCancel) {
-                // The decider is whoever DIDN'T request.
-                if (args.pendingCancelInitiator === 'Buyer' && args.side === 'seller') return true
-                if (args.pendingCancelInitiator === 'Seller' && args.side === 'buyer') return true
-            }
+        if (args.status === 'AwaitingFinalization' && args.side === 'buyer') return true
+        if (args.status === 'Late' && args.side === 'buyer') return true
+        if (args.pendingExt && args.side === 'buyer') return true
+        if (args.pendingCancel) {
+            // Decider = whoever didn't request.
+            if (args.pendingCancelInitiator === 'Buyer' && args.side === 'seller') return true
+            if (args.pendingCancelInitiator === 'Seller' && args.side === 'buyer') return true
         }
         return false
     }
@@ -425,12 +417,16 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
     }
 
     async countActionRequired(viewerId: string): Promise<{ asBuyer: number; asSeller: number }> {
-        // Cheap version: load (id, status, side) rows that COULD be action-
-        // required, then filter in JS. The orderId-key counts are small at
-        // campus scale.
+        // Load candidate rows, filter in JS — counts are small at campus scale.
+        // Rules mirror computeActionRequired.
         const [asBuyerRows, asSellerRows] = await Promise.all([
             this.prisma.order.findMany({
-                where: { buyerId: viewerId, status: { in: ['Delivered', 'InProgress', 'Late'] } },
+                where: {
+                    buyerId: viewerId,
+                    status: {
+                        in: ['Delivered', 'InProgress', 'Late', 'AwaitingFinalization']
+                    }
+                },
                 include: {
                     extensions: { where: { status: 'Pending' }, take: 1 },
                     cancellations: { where: { status: 'Pending' }, take: 1 }
@@ -439,9 +435,10 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             this.prisma.order.findMany({
                 where: {
                     sellerId: viewerId,
-                    status: { in: ['PendingReview', 'InProgress', 'Late'] }
+                    status: { in: ['PendingReview', 'InProgress', 'Late', 'Delivered'] }
                 },
                 include: {
+                    extensions: { where: { status: 'Pending' }, take: 1 },
                     cancellations: { where: { status: 'Pending' }, take: 1 }
                 }
             })
@@ -449,6 +446,8 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
 
         const asBuyer = asBuyerRows.filter((o) => {
             if (o.status === 'Delivered') return true
+            if (o.status === 'AwaitingFinalization') return true
+            if (o.status === 'Late') return true
             if (o.extensions.length > 0) return true
             if (o.cancellations.length > 0 && o.cancellations[0].initiator === 'Seller') return true
             return false
@@ -463,9 +462,6 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
     }
 
     async listActiveBetween(viewerId: string, otherUserId: string): Promise<OrderListRow[]> {
-        // Active orders between the viewer and one specific counterparty, in
-        // either direction. Returns rows in the same shape as listForUser so
-        // the Inbox header banner can render the same OrderListRow type.
         const rows = await this.prisma.order.findMany({
             where: {
                 status: {
@@ -477,9 +473,6 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
                 ]
             },
             orderBy: [{ placedAt: 'desc' as const }],
-            // Reasonable cap — a single pair shouldn't have dozens of
-            // concurrent active orders. If they do, the inbox can show the
-            // most recent few and the user opens /orders to see the rest.
             take: 10,
             include: {
                 buyer: {
@@ -603,19 +596,15 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
         }
     }
 
-    // ── Transitions ────────────────────────────────────────────────────────
-    // All transitions are wrapped in $transaction with a status guard. Wallet
-    // ops + system message inserts share the same `tx` client so everything
-    // commits atomically.
+    // All transitions wrap wallet ops + system message inserts in one $transaction
+    // with a status guard so state, money, and audit log commit atomically.
 
     async placeOrder(input: {
         buyerId: string
         gigId: string
         idempotencyKey: string
     }): Promise<{ order: OrderDetail; refs: MoneyMoveRefs }> {
-        // Pre-flight reads outside the transaction (cheap, no row-level lock
-        // contention). The wallet balance check runs again inside the tx —
-        // the second check is the authoritative one against a race.
+        // Pre-flight reads outside the tx; balance is re-checked inside as the authoritative guard.
         const gig = await this.prisma.gig.findUnique({
             where: { id: input.gigId },
             select: {
@@ -640,13 +629,9 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             throw new SellerCannotOrderOwnGigException(input.gigId, input.buyerId)
         }
 
-        // Captured INSIDE the tx callback, emitted AFTER the tx commits.
-        // Keeps system-event sockets and DB rows consistent: if the tx
-        // rolls back, $transaction throws and we never reach the emit line.
+        // Captured inside the tx, emitted after commit so a rollback doesn't publish a phantom.
         let pendingSysEvent: { threadId: string; message: MessageItem } | null = null
 
-        // Run inside a single transaction so wallet decrement + order insert
-        // are atomic.
         const result = await this.prisma.$transaction(async (tx) => {
             const buyer = await tx.user.findUnique({
                 where: { id: input.buyerId },
@@ -676,13 +661,10 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
                 include: this.orderIncludes
             })
 
-            // Wallet escrow inside the same tx
             const payment = await this.walletRepo.moveToEscrow(input.buyerId, gig.priceVnd, order.id, tx)
 
-            // Get or create the buyer/seller thread (idempotent — F08).
             const thread = await this.messagingRepo.createOrGetThread(input.buyerId, gig.sellerId)
 
-            // Audit log + system event message — both in the same tx.
             await tx.orderEvent.create({
                 data: {
                     orderId: order.id,
@@ -724,11 +706,8 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             this.emitSystemEventMessage(threadId, message)
         }
 
-        // BullMQ enqueue lives OUTSIDE the $transaction so a job isn't queued
-        // for a placement that ultimately rolled back. Trade-off: a crash
-        // between tx commit and enqueue would lose the auto-cancel job. For
-        // v1 the trade is acceptable — orders without a scheduled job stay
-        // PendingReview until the buyer or admin notices and acts.
+        // Enqueue outside the tx so a rolled-back placement doesn't schedule a job.
+        // Trade-off: a crash between commit and enqueue loses the auto-cancel job.
         await this.jobs.scheduleAcceptDeadline(
             result._scheduleAcceptDeadline.orderId,
             result._scheduleAcceptDeadline.deadline
@@ -791,9 +770,10 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             this.emitSystemEventMessage(threadId, message)
         }
 
-        // Remove the auto-cancel job — seller responded in time. (Phase-2
-        // adds the DeliveryDeadlineJob schedule here too.)
         await this.jobs.removeAcceptDeadline(orderId)
+        if (result.deliveryDeadline) {
+            await this.jobs.scheduleDeliveryDeadline(orderId, result.deliveryDeadline)
+        }
         return result
     }
 
@@ -859,7 +839,6 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             this.emitSystemEventMessage(threadId, message)
         }
 
-        // Seller is responding in time — kill the auto-cancel job.
         await this.jobs.removeAcceptDeadline(orderId)
         return result
     }
@@ -870,9 +849,6 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
         note: string
         stagedFileIds: string[]
     }): Promise<{ order: OrderDetail; delivery: DeliveryItem }> {
-        // Note is optional — empty notes persist as empty strings, files do
-        // most of the talking. The handler already trimmed; we just guard
-        // for the no-payload case below.
         const trimmed = input.note?.trim() ?? ''
 
         let pendingSysEvent: { threadId: string; message: MessageItem } | null = null
@@ -899,7 +875,6 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
                 include: { files: true }
             })
 
-            // Claim staged files
             if (input.stagedFileIds.length > 0) {
                 await tx.deliveryFile.updateMany({
                     where: {
@@ -949,7 +924,6 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             })
             pendingSysEvent = { threadId: thread.id, message: sysMsg }
 
-            // Reload delivery with the now-claimed files for the return shape
             const fullDelivery = await tx.delivery.findUnique({
                 where: { id: delivery.id },
                 include: { files: true }
@@ -967,6 +941,11 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
                 message: MessageItem
             }
             this.emitSystemEventMessage(threadId, message)
+        }
+
+        await this.jobs.removeDeliveryDeadline(input.orderId)
+        if (result.order.reviewDeadline) {
+            await this.jobs.scheduleReviewDeadline(input.orderId, result.order.reviewDeadline)
         }
 
         return result
@@ -1043,6 +1022,10 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             this.emitSystemEventMessage(threadId, message)
         }
 
+        // Kill both possible pending jobs — order could be Delivered (review) or AwaitingFinalization (dispute).
+        await this.jobs.removeReviewDeadline(orderId)
+        await this.jobs.removeDisputeDeadline(orderId)
+
         return result
     }
 
@@ -1051,8 +1034,7 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
         const result = await this.prisma.$transaction(async (tx) => {
             const order = await tx.order.findUnique({ where: { id: orderId } })
             if (!order) return null
-            // Idempotent guard — the job may fire after the seller already
-            // accepted or declined.
+            // Idempotent — job may fire after seller already decided.
             if (order.status !== 'PendingReview') return null
 
             const now = new Date()
@@ -1111,8 +1093,6 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
         note: string
         stagedFileIds: string[]
     }): Promise<{ order: OrderDetail; delivery: DeliveryItem }> {
-        // Note is optional — same rule as deliverWork. The "update" lets the
-        // seller iterate on the delivered files before the buyer accepts.
         const trimmed = input.note?.trim() ?? ''
 
         let pendingSysEvent: { threadId: string; message: MessageItem } | null = null
@@ -1122,16 +1102,10 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             if (order.sellerId !== input.viewerId) {
                 throw new NotAParticipantException(input.orderId, input.viewerId)
             }
-            // Only updatable while the buyer hasn't accepted yet. Once the
-            // order Completes or Cancels the delivery history is frozen.
             if (order.status !== 'Delivered' && order.status !== 'AwaitingFinalization') {
                 throw new InvalidTransitionException(order.status as OrderStatus, 'deliver')
             }
 
-            // Compute the next version number from the existing rows. We
-            // could rely on a unique (orderId, version) constraint instead,
-            // but reading the max is one query and keeps the schema migration
-            // unchanged.
             const latest = await tx.delivery.findFirst({
                 where: { orderId: input.orderId },
                 orderBy: { version: 'desc' as const },
@@ -1150,7 +1124,6 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
                 include: { files: true }
             })
 
-            // Claim staged files — same as deliverWork.
             if (input.stagedFileIds.length > 0) {
                 await tx.deliveryFile.updateMany({
                     where: {
@@ -1161,14 +1134,11 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
                 })
             }
 
-            // Anti-gaming rule (SRS §Delivery Updates & Versioning): the
-            // auto-complete countdown does NOT reset on update. We do NOT
-            // touch order.status, order.deliveredAt, or order.reviewDeadline
-            // — they reflect v1's timestamps. The buyer's review clock keeps
-            // ticking against the original delivery.
+            // Anti-gaming: auto-complete countdown does NOT reset on update.
+            // Do NOT touch order.status / deliveredAt / reviewDeadline — they stay on v1's timestamps.
             const updated = await tx.order.update({
                 where: { id: input.orderId },
-                data: {}, // no-op write, just to refetch with includes
+                data: {}, // no-op, just to refetch with includes
                 include: {
                     ...this.orderIncludes,
                     deliveries: {
@@ -1226,34 +1196,880 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
         return result
     }
 
-    // ── Phase 2 stubs (return rejection until Phase 2 lands) ───────────────
+    async requestExtension(input: {
+        orderId: string
+        viewerId: string
+        hoursRequested: number
+        reason: string | null
+    }): Promise<{ order: OrderDetail; extension: ExtensionItem }> {
+        let pendingSysEvent: { threadId: string; message: MessageItem } | null = null
+        let pendingExpiry: { extensionId: string; expiresAt: Date } | null = null
 
-    requestExtension(): never {
-        throw new Error('requestExtension is Phase 2 — not yet implemented')
+        const result = await this.prisma.$transaction(async (tx) => {
+            const order = await tx.order.findUnique({ where: { id: input.orderId } })
+            if (!order) throw new OrderNotFoundException(input.orderId)
+            if (order.sellerId !== input.viewerId) {
+                throw new NotAParticipantException(input.orderId, input.viewerId)
+            }
+            // InProgress extends deliveryDeadline; Delivered extends reviewDeadline.
+            // Late is blocked (deadline already missed — must deliver instead).
+            if (order.status !== 'InProgress' && order.status !== 'Delivered') {
+                throw new InvalidTransitionException(order.status as OrderStatus, 'request-extension')
+            }
+            const existing = await tx.extension.findFirst({
+                where: { orderId: input.orderId, status: 'Pending' as const },
+                select: { id: true }
+            })
+            if (existing) throw new PendingExtensionAlreadyExistsException(input.orderId)
+
+            const now = new Date()
+            const expiresAt = new Date(now.getTime() + EXTENSION_WINDOW_MS)
+
+            const ext = await tx.extension.create({
+                data: {
+                    orderId: input.orderId,
+                    requestedById: input.viewerId,
+                    hoursRequested: input.hoursRequested,
+                    reason: input.reason,
+                    status: 'Pending',
+                    requestedAt: now,
+                    expiresAt
+                }
+            })
+
+            await tx.orderEvent.create({
+                data: {
+                    orderId: input.orderId,
+                    type: 'ExtensionRequested',
+                    actorUserId: input.viewerId,
+                    payload: {
+                        extensionId: ext.id,
+                        hoursRequested: input.hoursRequested,
+                        reason: input.reason
+                    }
+                }
+            })
+
+            const reloaded = await tx.order.findUnique({
+                where: { id: input.orderId },
+                include: this.orderIncludes
+            })
+
+            const thread = await this.messagingRepo.createOrGetThread(order.buyerId, order.sellerId)
+            const sysMsg = await this.messagingRepo.insertSystemEvent({
+                threadId: thread.id,
+                orderId: input.orderId,
+                type: 'extension_requested',
+                payload: {
+                    number: order.number,
+                    actorId: input.viewerId,
+                    extensionId: ext.id,
+                    hoursRequested: input.hoursRequested,
+                    text: `${actorName(reloaded!.seller)} requested +${input.hoursRequested}h extension on ${formatOrderCode(order.number)}`
+                },
+                at: now,
+                tx
+            })
+            pendingSysEvent = { threadId: thread.id, message: sysMsg }
+            pendingExpiry = { extensionId: ext.id, expiresAt }
+
+            return {
+                order: this.toOrderItem(reloaded!),
+                extension: this.toExtension(ext)
+            }
+        })
+
+        if (pendingSysEvent) {
+            const { threadId, message } = pendingSysEvent as {
+                threadId: string
+                message: MessageItem
+            }
+            this.emitSystemEventMessage(threadId, message)
+        }
+        if (pendingExpiry) {
+            const { extensionId, expiresAt } = pendingExpiry as {
+                extensionId: string
+                expiresAt: Date
+            }
+            await this.jobs.scheduleExtensionExpiry(extensionId, expiresAt)
+        }
+
+        return result
     }
-    decideExtension(): never {
-        throw new Error('decideExtension is Phase 2 — not yet implemented')
+
+    async decideExtension(input: {
+        extensionId: string
+        viewerId: string
+        decision: 'accept' | 'reject'
+    }): Promise<{ order: OrderDetail; extension: ExtensionItem }> {
+        let pendingSysEvent: { threadId: string; message: MessageItem } | null = null
+        let pendingReschedule: { kind: 'delivery' | 'review'; orderId: string; deadline: Date } | null = null
+
+        const result = await this.prisma.$transaction(async (tx) => {
+            const ext = await tx.extension.findUnique({
+                where: { id: input.extensionId },
+                include: { order: true }
+            })
+            if (!ext || !ext.order) throw new OrderNotFoundException(input.extensionId)
+            if (ext.status !== 'Pending') {
+                throw new InvalidTransitionException(ext.order.status as OrderStatus, 'decide-extension')
+            }
+            // Buyer decides; seller requested.
+            if (ext.order.buyerId !== input.viewerId) {
+                throw new NotAParticipantException(ext.orderId, input.viewerId)
+            }
+
+            const now = new Date()
+            const newStatus = input.decision === 'accept' ? 'Accepted' : 'Rejected'
+
+            // On accept, shift the live deadline: InProgress/Late → deliveryDeadline, Delivered → reviewDeadline.
+            // Late flips back to InProgress when the shifted deliveryDeadline is in the future.
+            const orderUpdateData: {
+                status?: OrderStatus
+                deliveryDeadline?: Date
+                reviewDeadline?: Date
+            } = {}
+            if (input.decision === 'accept') {
+                const hoursMs = ext.hoursRequested * 60 * 60 * 1000
+                if (ext.order.status === 'InProgress' || ext.order.status === 'Late') {
+                    const base = ext.order.deliveryDeadline ?? now
+                    const newDeadline = new Date(base.getTime() + hoursMs)
+                    orderUpdateData.deliveryDeadline = newDeadline
+                    if (ext.order.status === 'Late' && newDeadline.getTime() > now.getTime()) {
+                        orderUpdateData.status = 'InProgress'
+                    }
+                    pendingReschedule = {
+                        kind: 'delivery',
+                        orderId: ext.orderId,
+                        deadline: newDeadline
+                    }
+                } else if (ext.order.status === 'Delivered') {
+                    const base = ext.order.reviewDeadline ?? now
+                    const newDeadline = new Date(base.getTime() + hoursMs)
+                    orderUpdateData.reviewDeadline = newDeadline
+                    pendingReschedule = {
+                        kind: 'review',
+                        orderId: ext.orderId,
+                        deadline: newDeadline
+                    }
+                }
+            }
+
+            const updatedExt = await tx.extension.update({
+                where: { id: input.extensionId },
+                data: {
+                    status: newStatus,
+                    decidedAt: now,
+                    decidedById: input.viewerId
+                }
+            })
+
+            if (Object.keys(orderUpdateData).length > 0) {
+                await tx.order.update({
+                    where: { id: ext.orderId },
+                    data: orderUpdateData
+                })
+            }
+
+            await tx.orderEvent.create({
+                data: {
+                    orderId: ext.orderId,
+                    type: input.decision === 'accept' ? 'ExtensionAccepted' : 'ExtensionRejected',
+                    actorUserId: input.viewerId,
+                    payload: { extensionId: ext.id }
+                }
+            })
+
+            const reloaded = await tx.order.findUnique({
+                where: { id: ext.orderId },
+                include: this.orderIncludes
+            })
+
+            const thread = await this.messagingRepo.createOrGetThread(ext.order.buyerId, ext.order.sellerId)
+            const text =
+                input.decision === 'accept'
+                    ? `${actorName(reloaded!.buyer)} accepted the extension on ${formatOrderCode(ext.order.number)}`
+                    : `${actorName(reloaded!.buyer)} declined the extension on ${formatOrderCode(ext.order.number)}`
+            const sysMsg = await this.messagingRepo.insertSystemEvent({
+                threadId: thread.id,
+                orderId: ext.orderId,
+                type: input.decision === 'accept' ? 'extension_accepted' : 'extension_rejected',
+                payload: {
+                    number: ext.order.number,
+                    actorId: input.viewerId,
+                    extensionId: ext.id,
+                    text
+                },
+                at: now,
+                tx
+            })
+            pendingSysEvent = { threadId: thread.id, message: sysMsg }
+
+            return {
+                order: this.toOrderItem(reloaded!),
+                extension: this.toExtension(updatedExt)
+            }
+        })
+
+        if (pendingSysEvent) {
+            const { threadId, message } = pendingSysEvent as {
+                threadId: string
+                message: MessageItem
+            }
+            this.emitSystemEventMessage(threadId, message)
+        }
+
+        await this.jobs.removeExtensionExpiry(input.extensionId)
+
+        if (pendingReschedule) {
+            const { kind, orderId, deadline } = pendingReschedule as {
+                kind: 'delivery' | 'review'
+                orderId: string
+                deadline: Date
+            }
+            if (kind === 'delivery') {
+                await this.jobs.removeDeliveryDeadline(orderId)
+                await this.jobs.scheduleDeliveryDeadline(orderId, deadline)
+            } else {
+                await this.jobs.removeReviewDeadline(orderId)
+                await this.jobs.scheduleReviewDeadline(orderId, deadline)
+            }
+        }
+
+        return result
     }
-    requestCancellation(): never {
-        throw new Error('requestCancellation is Phase 2 — not yet implemented')
+
+    async expireExtension(extensionId: string): Promise<{ order: OrderDetail; extension: ExtensionItem } | null> {
+        let pendingSysEvent: { threadId: string; message: MessageItem } | null = null
+
+        const result = await this.prisma.$transaction(async (tx) => {
+            const ext = await tx.extension.findUnique({
+                where: { id: extensionId },
+                include: { order: true }
+            })
+            // Idempotent — job may fire after buyer already decided.
+            if (!ext || ext.status !== 'Pending') return null
+
+            const now = new Date()
+            const updated = await tx.extension.update({
+                where: { id: extensionId },
+                data: { status: 'Expired', decidedAt: now }
+            })
+            await tx.orderEvent.create({
+                data: {
+                    orderId: ext.orderId,
+                    type: 'ExtensionExpired',
+                    actorUserId: null,
+                    payload: { extensionId }
+                }
+            })
+
+            const thread = await this.messagingRepo.createOrGetThread(ext.order.buyerId, ext.order.sellerId)
+            const sysMsg = await this.messagingRepo.insertSystemEvent({
+                threadId: thread.id,
+                orderId: ext.orderId,
+                type: 'extension_expired',
+                payload: {
+                    number: ext.order.number,
+                    extensionId,
+                    text: `Extension request on ${formatOrderCode(ext.order.number)} expired`
+                },
+                at: now,
+                tx
+            })
+            pendingSysEvent = { threadId: thread.id, message: sysMsg }
+
+            const reloaded = await tx.order.findUnique({
+                where: { id: ext.orderId },
+                include: this.orderIncludes
+            })
+
+            return {
+                order: this.toOrderItem(reloaded!),
+                extension: this.toExtension(updated)
+            }
+        })
+
+        if (pendingSysEvent) {
+            const { threadId, message } = pendingSysEvent as {
+                threadId: string
+                message: MessageItem
+            }
+            this.emitSystemEventMessage(threadId, message)
+        }
+
+        return result
     }
-    decideCancellation(): never {
-        throw new Error('decideCancellation is Phase 2 — not yet implemented')
+
+    async requestCancellation(input: {
+        orderId: string
+        viewerId: string
+        reasonCode: CancellationReasonCode
+        otherText: string | null
+    }): Promise<{ order: OrderDetail; cancellation: CancellationItem }> {
+        let pendingSysEvent: { threadId: string; message: MessageItem } | null = null
+        let pendingExpiry: { cancellationId: string; expiresAt: Date } | null = null
+        // Fast-cancel: buyer + PendingReview → flip to Cancelled in-tx, no 24h window.
+        let didFastCancel = false
+
+        const result = await this.prisma.$transaction(async (tx) => {
+            const order = await tx.order.findUnique({ where: { id: input.orderId } })
+            if (!order) throw new OrderNotFoundException(input.orderId)
+            if (order.buyerId !== input.viewerId && order.sellerId !== input.viewerId) {
+                throw new NotAParticipantException(input.orderId, input.viewerId)
+            }
+            // Terminal + Frozen states are blocked; all live states are allowed.
+            if (order.status === 'Completed' || order.status === 'Cancelled' || order.status === 'Frozen') {
+                throw new InvalidTransitionException(order.status as OrderStatus, 'request-cancellation')
+            }
+            const existing = await tx.cancellation.findFirst({
+                where: { orderId: input.orderId, status: 'Pending' as const },
+                select: { id: true }
+            })
+            if (existing) throw new PendingCancellationAlreadyExistsException(input.orderId)
+
+            // Validate reasonCode prefix matches initiator role.
+            const initiator: 'Buyer' | 'Seller' = order.buyerId === input.viewerId ? 'Buyer' : 'Seller'
+            const codeIsBuyer = input.reasonCode.startsWith('Buyer')
+            const codeIsSeller = input.reasonCode.startsWith('Seller')
+            if ((initiator === 'Buyer' && !codeIsBuyer) || (initiator === 'Seller' && !codeIsSeller)) {
+                throw new InvalidTransitionException(
+                    order.status as OrderStatus,
+                    `request-cancellation:role-mismatch(${input.reasonCode})`
+                )
+            }
+
+            const now = new Date()
+            const friendlyReason = formatCancellationReason(input.reasonCode, input.otherText)
+
+            // Buyer fast-cancel: PendingReview + Buyer initiator → immediate refund + close.
+            if (order.status === 'PendingReview' && initiator === 'Buyer') {
+                const cancel = await tx.cancellation.create({
+                    data: {
+                        orderId: input.orderId,
+                        requestedById: input.viewerId,
+                        initiator,
+                        reasonCode: input.reasonCode,
+                        otherText: input.otherText,
+                        status: 'Accepted',
+                        requestedAt: now,
+                        // expiresAt is required by schema; already decided, so set to now.
+                        expiresAt: now,
+                        decidedAt: now,
+                        decidedById: input.viewerId
+                    }
+                })
+
+                await this.walletRepo.refundFromEscrow(order.buyerId, order.gigPriceVndSnapshot, input.orderId, tx)
+
+                await tx.order.update({
+                    where: { id: input.orderId },
+                    data: {
+                        status: 'Cancelled',
+                        cancelledAt: now,
+                        cancelledByUserId: input.viewerId,
+                        cancellationReason: friendlyReason
+                    }
+                })
+
+                await tx.orderEvent.create({
+                    data: {
+                        orderId: input.orderId,
+                        type: 'CancellationRequested',
+                        actorUserId: input.viewerId,
+                        payload: {
+                            cancellationId: cancel.id,
+                            initiator,
+                            reasonCode: input.reasonCode,
+                            otherText: input.otherText,
+                            fastCancel: true
+                        }
+                    }
+                })
+                await tx.orderEvent.create({
+                    data: {
+                        orderId: input.orderId,
+                        type: 'CancellationAccepted',
+                        actorUserId: input.viewerId,
+                        payload: { cancellationId: cancel.id, fastCancel: true }
+                    }
+                })
+
+                const reloaded = await tx.order.findUnique({
+                    where: { id: input.orderId },
+                    include: this.orderIncludes
+                })
+
+                const thread = await this.messagingRepo.createOrGetThread(order.buyerId, order.sellerId)
+                const sysMsg = await this.messagingRepo.insertSystemEvent({
+                    threadId: thread.id,
+                    orderId: input.orderId,
+                    type: 'cancellation_accepted',
+                    payload: {
+                        number: order.number,
+                        actorId: input.viewerId,
+                        cancellationId: cancel.id,
+                        fastCancel: true,
+                        text: `${actorName(reloaded!.buyer)} cancelled ${formatOrderCode(order.number)} — order closed and refunded`
+                    },
+                    at: now,
+                    tx
+                })
+                pendingSysEvent = { threadId: thread.id, message: sysMsg }
+                didFastCancel = true
+
+                return {
+                    order: this.toOrderItem(reloaded!),
+                    cancellation: this.toCancellation(cancel)
+                }
+            }
+
+            // Standard path: insert Pending row + schedule 24h expiry; order stays in current state.
+            const expiresAt = new Date(now.getTime() + CANCELLATION_WINDOW_MS)
+
+            const cancel = await tx.cancellation.create({
+                data: {
+                    orderId: input.orderId,
+                    requestedById: input.viewerId,
+                    initiator,
+                    reasonCode: input.reasonCode,
+                    otherText: input.otherText,
+                    status: 'Pending',
+                    requestedAt: now,
+                    expiresAt
+                }
+            })
+
+            await tx.orderEvent.create({
+                data: {
+                    orderId: input.orderId,
+                    type: 'CancellationRequested',
+                    actorUserId: input.viewerId,
+                    payload: {
+                        cancellationId: cancel.id,
+                        initiator,
+                        reasonCode: input.reasonCode,
+                        otherText: input.otherText
+                    }
+                }
+            })
+
+            const reloaded = await tx.order.findUnique({
+                where: { id: input.orderId },
+                include: this.orderIncludes
+            })
+
+            const thread = await this.messagingRepo.createOrGetThread(order.buyerId, order.sellerId)
+            const actorParty = initiator === 'Buyer' ? reloaded!.buyer : reloaded!.seller
+            const sysMsg = await this.messagingRepo.insertSystemEvent({
+                threadId: thread.id,
+                orderId: input.orderId,
+                type: 'cancellation_requested',
+                payload: {
+                    number: order.number,
+                    actorId: input.viewerId,
+                    cancellationId: cancel.id,
+                    initiator,
+                    reasonCode: input.reasonCode,
+                    text: `${actorName(actorParty)} requested to cancel ${formatOrderCode(order.number)}`
+                },
+                at: now,
+                tx
+            })
+            pendingSysEvent = { threadId: thread.id, message: sysMsg }
+            pendingExpiry = { cancellationId: cancel.id, expiresAt }
+
+            return {
+                order: this.toOrderItem(reloaded!),
+                cancellation: this.toCancellation(cancel)
+            }
+        })
+
+        if (pendingSysEvent) {
+            const { threadId, message } = pendingSysEvent as {
+                threadId: string
+                message: MessageItem
+            }
+            this.emitSystemEventMessage(threadId, message)
+        }
+        // Fast-cancel skipped the accept-deadline window — drop the stale job.
+        if (didFastCancel) {
+            await this.jobs.removeAcceptDeadline(input.orderId)
+        }
+        if (pendingExpiry) {
+            const { cancellationId, expiresAt } = pendingExpiry as {
+                cancellationId: string
+                expiresAt: Date
+            }
+            await this.jobs.scheduleCancellationExpiry(cancellationId, expiresAt)
+        }
+
+        return result
     }
-    markLate(): never {
-        throw new Error('markLate is Phase 2 — not yet implemented')
+
+    async decideCancellation(input: {
+        cancellationId: string
+        viewerId: string
+        decision: 'accept' | 'reject'
+    }): Promise<{ order: OrderDetail; cancellation: CancellationItem; refs: MoneyMoveRefs }> {
+        let pendingSysEvent: { threadId: string; message: MessageItem } | null = null
+        let refundId: string | undefined
+
+        const result = await this.prisma.$transaction(async (tx) => {
+            const cancel = await tx.cancellation.findUnique({
+                where: { id: input.cancellationId },
+                include: { order: true }
+            })
+            if (!cancel || !cancel.order) throw new OrderNotFoundException(input.cancellationId)
+            if (cancel.status !== 'Pending') {
+                throw new InvalidTransitionException(cancel.order.status as OrderStatus, 'decide-cancellation')
+            }
+            // Decider = counterparty, not the requester.
+            const isParticipant = cancel.order.buyerId === input.viewerId || cancel.order.sellerId === input.viewerId
+            if (!isParticipant) {
+                throw new NotAParticipantException(cancel.orderId, input.viewerId)
+            }
+            if (cancel.requestedById === input.viewerId) {
+                throw new NotAParticipantException(cancel.orderId, input.viewerId)
+            }
+
+            const now = new Date()
+            const newCancelStatus = input.decision === 'accept' ? 'Accepted' : 'Rejected'
+
+            const updatedCancel = await tx.cancellation.update({
+                where: { id: input.cancellationId },
+                data: {
+                    status: newCancelStatus,
+                    decidedAt: now,
+                    decidedById: input.viewerId
+                }
+            })
+
+            if (input.decision === 'accept') {
+                const refund = await this.walletRepo.refundFromEscrow(
+                    cancel.order.buyerId,
+                    cancel.order.gigPriceVndSnapshot,
+                    cancel.orderId,
+                    tx
+                )
+                refundId = refund.id
+                await tx.order.update({
+                    where: { id: cancel.orderId },
+                    data: {
+                        status: 'Cancelled',
+                        cancelledAt: now,
+                        cancelledByUserId: input.viewerId,
+                        cancellationReason: formatCancellationReason(
+                            cancel.reasonCode as CancellationReasonCode,
+                            cancel.otherText
+                        )
+                    }
+                })
+            }
+
+            await tx.orderEvent.create({
+                data: {
+                    orderId: cancel.orderId,
+                    type: input.decision === 'accept' ? 'CancellationAccepted' : 'CancellationRejected',
+                    actorUserId: input.viewerId,
+                    payload: { cancellationId: cancel.id }
+                }
+            })
+
+            const reloaded = await tx.order.findUnique({
+                where: { id: cancel.orderId },
+                include: this.orderIncludes
+            })
+
+            const thread = await this.messagingRepo.createOrGetThread(cancel.order.buyerId, cancel.order.sellerId)
+            const deciderParty = cancel.order.buyerId === input.viewerId ? reloaded!.buyer : reloaded!.seller
+            const text =
+                input.decision === 'accept'
+                    ? `${actorName(deciderParty)} accepted the cancellation — ${formatOrderCode(cancel.order.number)} cancelled`
+                    : `${actorName(deciderParty)} declined the cancellation request on ${formatOrderCode(cancel.order.number)}`
+            const sysMsg = await this.messagingRepo.insertSystemEvent({
+                threadId: thread.id,
+                orderId: cancel.orderId,
+                type: input.decision === 'accept' ? 'cancellation_accepted' : 'cancellation_rejected',
+                payload: {
+                    number: cancel.order.number,
+                    actorId: input.viewerId,
+                    cancellationId: cancel.id,
+                    text
+                },
+                at: now,
+                tx
+            })
+            pendingSysEvent = { threadId: thread.id, message: sysMsg }
+
+            return {
+                order: this.toOrderItem(reloaded!),
+                cancellation: this.toCancellation(updatedCancel),
+                refs: refundId ? { refundId } : {}
+            }
+        })
+
+        if (pendingSysEvent) {
+            const { threadId, message } = pendingSysEvent as {
+                threadId: string
+                message: MessageItem
+            }
+            this.emitSystemEventMessage(threadId, message)
+        }
+
+        await this.jobs.removeCancellationExpiry(input.cancellationId)
+        // Accept = terminal — kill all remaining deadline jobs.
+        if (input.decision === 'accept') {
+            await this.jobs.removeAcceptDeadline(result.order.id)
+            await this.jobs.removeDeliveryDeadline(result.order.id)
+            await this.jobs.removeReviewDeadline(result.order.id)
+            await this.jobs.removeDisputeDeadline(result.order.id)
+        }
+
+        return result
     }
-    autoCompleteOrder(): never {
-        throw new Error('autoCompleteOrder is Phase 2 — not yet implemented')
+
+    async expireCancellation(
+        cancellationId: string
+    ): Promise<{ order: OrderDetail; cancellation: CancellationItem } | null> {
+        let pendingSysEvent: { threadId: string; message: MessageItem } | null = null
+
+        const result = await this.prisma.$transaction(async (tx) => {
+            const cancel = await tx.cancellation.findUnique({
+                where: { id: cancellationId },
+                include: { order: true }
+            })
+            if (!cancel || cancel.status !== 'Pending') return null
+
+            const now = new Date()
+            const updated = await tx.cancellation.update({
+                where: { id: cancellationId },
+                data: { status: 'Expired', decidedAt: now }
+            })
+            await tx.orderEvent.create({
+                data: {
+                    orderId: cancel.orderId,
+                    type: 'CancellationExpired',
+                    actorUserId: null,
+                    payload: { cancellationId }
+                }
+            })
+
+            const thread = await this.messagingRepo.createOrGetThread(cancel.order.buyerId, cancel.order.sellerId)
+            const sysMsg = await this.messagingRepo.insertSystemEvent({
+                threadId: thread.id,
+                orderId: cancel.orderId,
+                type: 'cancellation_expired',
+                payload: {
+                    number: cancel.order.number,
+                    cancellationId,
+                    text: `Cancellation request on ${formatOrderCode(cancel.order.number)} expired`
+                },
+                at: now,
+                tx
+            })
+            pendingSysEvent = { threadId: thread.id, message: sysMsg }
+
+            const reloaded = await tx.order.findUnique({
+                where: { id: cancel.orderId },
+                include: this.orderIncludes
+            })
+
+            return {
+                order: this.toOrderItem(reloaded!),
+                cancellation: this.toCancellation(updated)
+            }
+        })
+
+        if (pendingSysEvent) {
+            const { threadId, message } = pendingSysEvent as {
+                threadId: string
+                message: MessageItem
+            }
+            this.emitSystemEventMessage(threadId, message)
+        }
+
+        return result
     }
-    finalizeOrder(): never {
-        throw new Error('finalizeOrder is Phase 2 — not yet implemented')
+
+    async markLate(orderId: string): Promise<OrderDetail | null> {
+        let pendingSysEvent: { threadId: string; message: MessageItem } | null = null
+
+        const result = await this.prisma.$transaction(async (tx) => {
+            const order = await tx.order.findUnique({ where: { id: orderId } })
+            if (!order) return null
+            // Idempotent — seller may have delivered just in time.
+            if (order.status !== 'InProgress') return null
+
+            const now = new Date()
+            const updated = await tx.order.update({
+                where: { id: orderId },
+                data: { status: 'Late' },
+                include: this.orderIncludes
+            })
+            await tx.orderEvent.create({
+                data: { orderId, type: 'Late', actorUserId: null }
+            })
+
+            const thread = await this.messagingRepo.createOrGetThread(order.buyerId, order.sellerId)
+            const sysMsg = await this.messagingRepo.insertSystemEvent({
+                threadId: thread.id,
+                orderId,
+                type: 'order_marked_late',
+                payload: {
+                    number: order.number,
+                    text: `${formatOrderCode(order.number)} marked late — delivery deadline passed`
+                },
+                at: now,
+                tx
+            })
+            pendingSysEvent = { threadId: thread.id, message: sysMsg }
+
+            return this.toOrderItem(updated)
+        })
+
+        if (pendingSysEvent) {
+            const { threadId, message } = pendingSysEvent as {
+                threadId: string
+                message: MessageItem
+            }
+            this.emitSystemEventMessage(threadId, message)
+        }
+
+        return result
     }
-    expireExtension(): never {
-        throw new Error('expireExtension is Phase 2 — not yet implemented')
+
+    async autoCompleteOrder(orderId: string): Promise<OrderDetail | null> {
+        let pendingSysEvent: { threadId: string; message: MessageItem } | null = null
+        let pendingDispute: { orderId: string; deadline: Date } | null = null
+
+        const result = await this.prisma.$transaction(async (tx) => {
+            const order = await tx.order.findUnique({ where: { id: orderId } })
+            if (!order) return null
+            // Idempotent — buyer may have accepted in the last second.
+            if (order.status !== 'Delivered') return null
+
+            const now = new Date()
+            const disputeDeadline = new Date(now.getTime() + DISPUTE_WINDOW_MS)
+
+            const updated = await tx.order.update({
+                where: { id: orderId },
+                data: {
+                    status: 'AwaitingFinalization',
+                    autoCompletedAt: now,
+                    disputeDeadline
+                },
+                include: this.orderIncludes
+            })
+            await tx.orderEvent.create({
+                data: { orderId, type: 'AutoCompleted', actorUserId: null }
+            })
+
+            const thread = await this.messagingRepo.createOrGetThread(order.buyerId, order.sellerId)
+            const sysMsg = await this.messagingRepo.insertSystemEvent({
+                threadId: thread.id,
+                orderId,
+                type: 'order_auto_completed',
+                payload: {
+                    number: order.number,
+                    text: `${formatOrderCode(order.number)} auto-completed — dispute window started`
+                },
+                at: now,
+                tx
+            })
+            pendingSysEvent = { threadId: thread.id, message: sysMsg }
+            pendingDispute = { orderId, deadline: disputeDeadline }
+
+            return this.toOrderItem(updated)
+        })
+
+        if (pendingSysEvent) {
+            const { threadId, message } = pendingSysEvent as {
+                threadId: string
+                message: MessageItem
+            }
+            this.emitSystemEventMessage(threadId, message)
+        }
+        if (pendingDispute) {
+            const { orderId: oid, deadline } = pendingDispute as {
+                orderId: string
+                deadline: Date
+            }
+            await this.jobs.removeReviewDeadline(oid)
+            await this.jobs.scheduleDisputeDeadline(oid, deadline)
+        }
+
+        return result
     }
-    expireCancellation(): never {
-        throw new Error('expireCancellation is Phase 2 — not yet implemented')
+
+    async finalizeOrder(orderId: string): Promise<{ order: OrderDetail; refs: MoneyMoveRefs } | null> {
+        let pendingSysEvent: { threadId: string; message: MessageItem } | null = null
+
+        const result = await this.prisma.$transaction(async (tx) => {
+            const order = await tx.order.findUnique({ where: { id: orderId } })
+            if (!order) return null
+            if (order.status !== 'AwaitingFinalization') return null
+
+            const now = new Date()
+            const updated = await tx.order.update({
+                where: { id: orderId },
+                data: { status: 'Completed', completedAt: now },
+                include: this.orderIncludes
+            })
+
+            const { earning, platformFee } = await this.walletRepo.releaseFromEscrow(
+                order.buyerId,
+                order.sellerId,
+                PLATFORM_FEE_COLLECTOR_USER_ID,
+                order.gigPriceVndSnapshot,
+                PLATFORM_FEE_PCT,
+                orderId,
+                tx
+            )
+
+            await tx.orderEvent.create({
+                data: {
+                    orderId,
+                    type: 'Finalized',
+                    actorUserId: null,
+                    payload: { earningId: earning.id, platformFeeId: platformFee.id }
+                }
+            })
+
+            const thread = await this.messagingRepo.createOrGetThread(order.buyerId, order.sellerId)
+            const sysMsg = await this.messagingRepo.insertSystemEvent({
+                threadId: thread.id,
+                orderId,
+                type: 'order_finalized',
+                payload: {
+                    number: order.number,
+                    sellerShare: earning.amountVnd,
+                    platformShare: platformFee.amountVnd,
+                    text: `${formatOrderCode(order.number)} finalized — funds released to ${actorName(updated.seller)}`
+                },
+                at: now,
+                tx
+            })
+            pendingSysEvent = { threadId: thread.id, message: sysMsg }
+
+            return {
+                order: this.toOrderItem(updated),
+                refs: { earningId: earning.id, platformFeeId: platformFee.id }
+            }
+        })
+
+        if (pendingSysEvent) {
+            const { threadId, message } = pendingSysEvent as {
+                threadId: string
+                message: MessageItem
+            }
+            this.emitSystemEventMessage(threadId, message)
+        }
+        if (result) {
+            await this.jobs.removeDisputeDeadline(orderId)
+        }
+
+        return result
     }
 }
 
@@ -1273,16 +2089,11 @@ function sortToOrderBy(sort: OrdersSort) {
             return [{ gigPriceVndSnapshot: 'asc' as const }]
         case 'most_urgent':
         default:
-            // Server-side "most urgent" is approximated as soonest deadline first.
-            // The actionRequired-first sort would need a custom SQL CASE; for
-            // Phase 1 just sort by placedAt desc (urgent rows naturally cluster
-            // near the top within the loaded window). Real urgency sort is a
-            // Phase-2 polish task.
+            // Approximated as placedAt desc for now; proper urgency sort needs a SQL CASE.
             return [{ placedAt: 'desc' as const }]
     }
 }
 
-// Reference variables used downstream — silence unused linter when relevant
 void EXTENSION_WINDOW_MS
 void CANCELLATION_WINDOW_MS
 void DISPUTE_WINDOW_MS

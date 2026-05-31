@@ -3,7 +3,7 @@ import { EventBus } from '@nestjs/cqrs'
 import { SetUsernameHandler } from './set-username.handler'
 import { SetUsernameCommand } from './set-username.command'
 import { USER_REPOSITORY_PORT, UserEntity } from '@/modules/users/domain'
-import { UserNotFoundException, UsernameAlreadySetException } from '@/modules/users/domain'
+import { UserNotFoundException, UsernameAlreadySetException, UsernameTakenException } from '@/modules/users/domain'
 import { UserProfileUpdatedEvent } from '../../events/user-profile-updated.event'
 
 describe('SetUsernameHandler', () => {
@@ -105,6 +105,28 @@ describe('SetUsernameHandler', () => {
         expect(mockUserRepo.update).not.toHaveBeenCalled()
         expect(mockEventBus.publish).not.toHaveBeenCalled()
     })
+
+    it.each([['__platform__'], ['__anything__'], ['admin-abcdef012345']])(
+        'should reject reserved system username %s',
+        async (reservedName: string) => {
+            const userId = 'user-123'
+            const command = new SetUsernameCommand(userId, reservedName)
+
+            const existingUser = new UserEntity({
+                id: userId,
+                keycloakId: 'kc-123',
+                email: 'test@example.com',
+                hasSetUsername: false
+            })
+
+            mockUserRepo.findById.mockResolvedValue(existingUser)
+
+            await expect(handler.execute(command)).rejects.toThrow(UsernameTakenException)
+
+            expect(mockUserRepo.update).not.toHaveBeenCalled()
+            expect(mockEventBus.publish).not.toHaveBeenCalled()
+        }
+    )
 
     it('should bubble up exceptions thrown by the repository during update', async () => {
         const userId = 'user-123'

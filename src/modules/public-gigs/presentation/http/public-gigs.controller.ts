@@ -277,6 +277,7 @@ export class PublicGigsController {
             avgRating: detail.avgRating,
             reviewCount: detail.reviewCount,
             completedOrderCount: detail.completedOrderCount,
+            inQueueOrderCount: detail.inQueueOrderCount,
             isSaved: detail.isSaved,
             images,
             bullets,

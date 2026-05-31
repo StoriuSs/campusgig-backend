@@ -17,11 +17,10 @@ export class SoftDeleteGigHandler implements ICommandHandler<SoftDeleteGigComman
         if (!current || current.sellerId !== command.callerId) {
             throw new GigNotFoundException(command.gigId)
         }
-        // Idempotent — if already Deleted, no-op.
         if (current.status === 'Deleted') {
             return
         }
-        // Locked during admin review (no edit/pause/delete while Pending).
+        // Locked during admin review — no mutations while Pending.
         if (current.status === 'Pending') {
             throw new GigLockedForReviewException(command.gigId)
         }

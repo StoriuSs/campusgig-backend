@@ -167,7 +167,11 @@ export const MESSAGES = {
         DELIVERIES_LISTED: 'Deliveries retrieved',
         DELIVERY_FILE_STAGED: 'Delivery file uploaded',
         DELIVERY_FILE_RESOLVED: 'Download URL ready',
-        DELIVERY_ACCEPTED: 'Delivery accepted'
+        DELIVERY_ACCEPTED: 'Delivery accepted',
+        EXTENSION_REQUESTED: 'Extension request sent',
+        EXTENSION_DECIDED: 'Extension decision recorded',
+        CANCELLATION_REQUESTED: 'Cancellation request sent',
+        CANCELLATION_DECIDED: 'Cancellation decision recorded'
     },
 
     // Health messages

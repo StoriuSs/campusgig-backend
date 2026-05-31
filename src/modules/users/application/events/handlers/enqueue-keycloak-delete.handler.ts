@@ -4,12 +4,6 @@ import { InjectQueue } from '@nestjs/bullmq'
 import { Queue } from 'bullmq'
 import { AccountDeletedEvent } from '../account-deleted.event'
 
-/**
- * Event Handler: Enqueue Keycloak Hard Delete
- *
- * Reacts to AccountDeleted events.
- * Enqueues a BullMQ job to hard-delete the user from Keycloak.
- */
 @EventsHandler(AccountDeletedEvent)
 export class EnqueueKeycloakDeleteHandler implements IEventHandler<AccountDeletedEvent> {
     private readonly logger = new Logger(EnqueueKeycloakDeleteHandler.name)

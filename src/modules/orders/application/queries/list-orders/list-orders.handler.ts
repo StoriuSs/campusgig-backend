@@ -12,9 +12,6 @@ export class ListOrdersHandler implements IQueryHandler<ListOrdersQuery> {
     ) {}
 
     execute(query: ListOrdersQuery): Promise<{ items: OrderListRow[]; total: number; counts: OrderStatusCounts }> {
-        // The repo runs a single SQL pass that returns the page slice + the
-        // per-status counts so the toolbar dropdown can show "All (15) ·
-        // Pending (1) · ..." without a second round-trip.
         return this.repo.listForUser({
             viewerId: query.viewerId,
             side: query.side,

@@ -56,14 +56,12 @@ export class UpdateGigHandler implements ICommandHandler<UpdateGigCommand> {
             throw new GigNotFoundException(command.gigId)
         }
 
-        // Gigs under review are locked — editing them would race the admin verdict.
         if (current.gig.status === 'Pending') {
             throw new GigLockedForReviewException(command.gigId)
         }
 
         const patch = command.patch
 
-        // Validate each present field.
         if (patch.title !== undefined) {
             const t = patch.title.trim()
             if (t.length < TITLE_MIN || t.length > TITLE_MAX) {
@@ -135,8 +133,6 @@ export class UpdateGigHandler implements ICommandHandler<UpdateGigCommand> {
             if (patch.imageIds.length > MAX_IMAGES) {
                 throw new GigImageCapReachedException()
             }
-            // Validate every imageId is either (a) already attached to this gig OR
-            // (b) an orphan owned by this caller. Anything else is unauthorized.
             const seenIds = new Set<string>()
             for (const imageId of patch.imageIds) {
                 if (seenIds.has(imageId)) {
@@ -148,32 +144,26 @@ export class UpdateGigHandler implements ICommandHandler<UpdateGigCommand> {
                     throw new ImageNotOwnedException(imageId)
                 }
                 if (image.gigId === current.gig.id) {
-                    // Already attached to this gig — fine.
                     continue
                 }
                 if (image.isOrphan && image.uploaderId === command.callerId) {
-                    // Newly uploaded by caller — fine.
                     continue
                 }
                 throw new ImageNotOwnedException(imageId)
             }
         }
 
-        // Smart-moderation status transition.
+        // Sensitive changes (title/price/desc/category) re-queue for moderation.
+        // Any edit on a Rejected gig also re-queues (counts as resubmission).
         const sensitive = isSensitiveChange(current, patch)
         const previousStatus = current.gig.status
         let nextStatus: GigStatus | null = null
 
         if (sensitive) {
-            if (previousStatus === 'Active' || previousStatus === 'Paused') {
-                nextStatus = 'Pending'
-            } else if (previousStatus === 'Rejected') {
+            if (previousStatus === 'Active' || previousStatus === 'Paused' || previousStatus === 'Rejected') {
                 nextStatus = 'Pending'
             }
-            // Pending stays Pending.
         } else {
-            // Non-sensitive only: keep status. But if Rejected, a fully-non-sensitive
-            // patch is still a resubmission attempt — we treat it as Pending too.
             if (previousStatus === 'Rejected' && Object.keys(patch).length > 0) {
                 nextStatus = 'Pending'
             }
@@ -181,9 +171,6 @@ export class UpdateGigHandler implements ICommandHandler<UpdateGigCommand> {
 
         const updated = await this.gigRepo.update(command.gigId, patch, nextStatus)
 
-        // After the Pending-lock guard, previousStatus is never 'Pending', and
-        // every nextStatus we assign here is 'Pending' — so any non-null
-        // nextStatus is a genuine status change.
         return {
             gig: updated,
             statusChanged: nextStatus !== null,

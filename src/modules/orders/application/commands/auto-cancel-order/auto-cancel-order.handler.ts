@@ -16,9 +16,7 @@ export class AutoCancelOrderHandler implements ICommandHandler<AutoCancelOrderCo
     ) {}
 
     async execute(command: AutoCancelOrderCommand): Promise<OrderDetail | null> {
-        // Repo returns null when the order has already moved out of
-        // PendingReview (seller accepted / declined moments before the job
-        // fired). Idempotent no-op.
+        // Null = order already left PendingReview before this job fired — idempotent no-op.
         const order = await this.repo.autoCancelOrder(command.orderId)
         if (!order) {
             this.logger.debug(`AutoCancelOrder no-op for ${command.orderId}: order moved out of PendingReview`)

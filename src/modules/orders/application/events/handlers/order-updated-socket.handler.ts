@@ -4,6 +4,12 @@ import { SocketEmitter } from '@/modules/messaging/application/events/handlers/s
 
 import type { OrderDetail } from '../../../domain/ports'
 import {
+    CancellationDecidedEvent,
+    CancellationExpiredEvent,
+    CancellationRequestedEvent,
+    ExtensionDecidedEvent,
+    ExtensionExpiredEvent,
+    ExtensionRequestedEvent,
     OrderAcceptedDeliveryEvent,
     OrderAcceptedEvent,
     OrderAutoCancelledEvent,
@@ -107,6 +113,59 @@ export class OrderAutoCompletedSocketHandler implements IEventHandler<OrderAutoC
 export class OrderFinalizedSocketHandler implements IEventHandler<OrderFinalizedEvent> {
     constructor(private readonly emitter: SocketEmitter) {}
     handle(event: OrderFinalizedEvent): void {
+        emit(this.emitter, event.order)
+    }
+}
+
+// Extension / cancellation request + decide + expire events all carry the
+// post-transition OrderDetail (with pendingExtension / pendingCancellation
+// fields populated or cleared as appropriate), so the frontend's DVA model
+// re-renders the right decision-card slot without a refetch.
+
+@EventsHandler(ExtensionRequestedEvent)
+export class ExtensionRequestedSocketHandler implements IEventHandler<ExtensionRequestedEvent> {
+    constructor(private readonly emitter: SocketEmitter) {}
+    handle(event: ExtensionRequestedEvent): void {
+        emit(this.emitter, event.order)
+    }
+}
+
+@EventsHandler(ExtensionDecidedEvent)
+export class ExtensionDecidedSocketHandler implements IEventHandler<ExtensionDecidedEvent> {
+    constructor(private readonly emitter: SocketEmitter) {}
+    handle(event: ExtensionDecidedEvent): void {
+        emit(this.emitter, event.order)
+    }
+}
+
+@EventsHandler(ExtensionExpiredEvent)
+export class ExtensionExpiredSocketHandler implements IEventHandler<ExtensionExpiredEvent> {
+    constructor(private readonly emitter: SocketEmitter) {}
+    handle(event: ExtensionExpiredEvent): void {
+        emit(this.emitter, event.order)
+    }
+}
+
+@EventsHandler(CancellationRequestedEvent)
+export class CancellationRequestedSocketHandler implements IEventHandler<CancellationRequestedEvent> {
+    constructor(private readonly emitter: SocketEmitter) {}
+    handle(event: CancellationRequestedEvent): void {
+        emit(this.emitter, event.order)
+    }
+}
+
+@EventsHandler(CancellationDecidedEvent)
+export class CancellationDecidedSocketHandler implements IEventHandler<CancellationDecidedEvent> {
+    constructor(private readonly emitter: SocketEmitter) {}
+    handle(event: CancellationDecidedEvent): void {
+        emit(this.emitter, event.order)
+    }
+}
+
+@EventsHandler(CancellationExpiredEvent)
+export class CancellationExpiredSocketHandler implements IEventHandler<CancellationExpiredEvent> {
+    constructor(private readonly emitter: SocketEmitter) {}
+    handle(event: CancellationExpiredEvent): void {
         emit(this.emitter, event.order)
     }
 }

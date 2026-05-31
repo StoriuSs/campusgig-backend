@@ -6,7 +6,6 @@ import { LoggerModule } from 'nestjs-pino'
 import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager'
 import { isMetricsRequest } from '@/shared/utils'
 
-// Config imports
 import {
     appConfig,
     databaseConfig,
@@ -22,7 +21,6 @@ import {
     validationSchema
 } from '@/config'
 
-// Shared imports
 import { GlobalExceptionFilter } from '@/shared/presentation'
 import {
     TransformInterceptor,
@@ -35,21 +33,16 @@ import { IdempotencyService } from '@/shared/infrastructure'
 import { KeyvThrottlerStorage } from '@/shared/infrastructure'
 import { RequestIdMiddleware } from '@/shared/presentation'
 
-// Core infrastructure modules
 import { PrismaModule } from '@/shared/infrastructure'
 import { CacheModule } from '@/shared/infrastructure'
 import { BullModule } from '@nestjs/bullmq'
 import { PrometheusModule } from '@/shared/infrastructure'
 
-// Infra modules
 import { EmailModule } from '@/shared/infrastructure'
 import { UploadModule } from '@/shared/infrastructure'
 import { KeycloakModule } from '@/shared/infrastructure'
 
-// Top-level modules
 import { HealthModule } from '@/health/health.module'
-
-// Feature modules (Hexagonal Architecture)
 import { UsersModule } from '@/modules/users/users.module'
 import { UsersDomainExceptionFilter } from '@/modules/users/presentation'
 import { CategoriesModule } from '@/modules/categories/categories.module'
@@ -60,13 +53,11 @@ import { WalletModule } from '@/modules/wallet/wallet.module'
 import { MessagingModule } from '@/modules/messaging/messaging.module'
 import { OrdersModule } from '@/modules/orders/orders.module'
 
-// Guards
 import { KeycloakAuthGuard } from '@/shared/infrastructure'
 import { RolesGuard } from '@/shared/infrastructure'
 
 @Module({
     imports: [
-        // Configuration
         ConfigModule.forRoot({
             isGlobal: true,
             // Load .env.development or .env.production based on NODE_ENV.
@@ -92,7 +83,6 @@ import { RolesGuard } from '@/shared/infrastructure'
             }
         }),
 
-        // Rate limiting with 2-layer cache storage
         ThrottlerModule.forRootAsync({
             inject: [ConfigService, CACHE_MANAGER],
             useFactory: (configService: ConfigService, cache: Cache) => ({
@@ -133,10 +123,8 @@ import { RolesGuard } from '@/shared/infrastructure'
             })
         }),
 
-        // Pino Logger
         LoggerModule.forRoot(pinoConfig),
 
-        // Core infrastructure
         PrismaModule,
         CacheModule,
         BullModule.forRootAsync({
@@ -151,15 +139,12 @@ import { RolesGuard } from '@/shared/infrastructure'
         }),
         PrometheusModule,
 
-        // Infra
         EmailModule,
         UploadModule,
         KeycloakModule,
 
-        // Health
         HealthModule,
 
-        // Feature modules (Hexagonal Architecture)
         UsersModule,
         CategoriesModule,
         GigsModule,
@@ -170,52 +155,42 @@ import { RolesGuard } from '@/shared/infrastructure'
         OrdersModule
     ],
     providers: [
-        // Global authentication guard (all routes protected by default)
         {
             provide: APP_GUARD,
             useClass: KeycloakAuthGuard
         },
-        // Global rate limiting guard
         {
             provide: APP_GUARD,
             useClass: ThrottlerGuard
         },
-        // Role-based access control guard
         {
             provide: APP_GUARD,
             useClass: RolesGuard
         },
-        // Global exception filters
         {
             provide: APP_FILTER,
             useClass: GlobalExceptionFilter
         },
-        // Domain exception filter (maps domain errors → HTTP responses)
         {
             provide: APP_FILTER,
             useClass: UsersDomainExceptionFilter
         },
-        // Global response transformation
         {
             provide: APP_INTERCEPTOR,
             useClass: TransformInterceptor
         },
-        // Global logging
         {
             provide: APP_INTERCEPTOR,
             useClass: LoggingInterceptor
         },
-        // Global timeout
         {
             provide: APP_INTERCEPTOR,
             useClass: TimeoutInterceptor
         },
-        // Idempotency interceptor
         {
             provide: APP_INTERCEPTOR,
             useClass: IdempotencyInterceptor
         },
-        // Prometheus metrics interceptor
         {
             provide: APP_INTERCEPTOR,
             useClass: MetricsInterceptor

@@ -1,7 +1,6 @@
 export const MESSAGING_REPOSITORY_PORT = 'MESSAGING_REPOSITORY_PORT'
 
-// User info shown in conversation rows and presence updates. `avatarKey` is
-// the S3 object key — controllers resolve to a presigned URL before responding.
+// `avatarKey` is the S3 object key — controllers resolve to a presigned URL before responding.
 export interface ThreadCounterpartInfo {
     id: string
     username: string | null
@@ -41,9 +40,7 @@ export interface MessageItem {
     orderId: string | null
     createdAt: Date
     attachments: AttachmentItem[]
-    // Derived: whether the OTHER participant has read this message (only
-    // meaningful for messages sent by the viewer). For received messages this
-    // is always false from the viewer's perspective.
+    // Only meaningful for messages sent by the viewer; always false for received messages.
     readByRecipient: boolean
 }
 
@@ -54,9 +51,8 @@ export interface FileItem extends AttachmentItem {
     createdAt: Date
 }
 
-// Returned from the staging upload endpoint. The frontend carries the ids
-// into the subsequent Send call where the SendMessage handler claims the
-// staged rows by linking them to the new message id.
+// The frontend carries these ids into the Send call; the handler claims them by
+// linking staged rows to the new message id.
 export interface StagedAttachment {
     id: string
     key: string
@@ -66,12 +62,9 @@ export interface StagedAttachment {
 }
 
 export interface MessagingRepositoryPort {
-    // ---- Threads ----
     createOrGetThread(userAId: string, userBId: string): Promise<{ id: string; createdNow: boolean }>
 
-    // Returns null when the thread doesn't exist OR the viewer isn't a
-    // participant. Single membership-check entry-point used by every command
-    // and query that takes a threadId.
+    // Returns null when thread doesn't exist OR viewer isn't a participant.
     getThreadById(threadId: string, viewerId: string): Promise<{ id: string; otherUserId: string } | null>
 
     listConversations(
@@ -80,11 +73,8 @@ export interface MessagingRepositoryPort {
         pageSize: number
     ): Promise<{ items: ConversationListItem[]; total: number }>
 
-    // ---- Messages ----
-    // Inbox view (default): senderId NOT NULL filter excludes system events.
-    // Order Workspace view: pass `opts.orderId` to ALSO include system events
-    // (senderId NULL) tied to that order — those render inline as system
-    // event pills via <SystemEventPill /> on the frontend.
+    // Pass `opts.orderId` to also include system events (senderId NULL) tied to
+    // that order — rendered as system event pills on the Order Workspace view.
     listMessages(
         threadId: string,
         beforeId: string | null,
@@ -92,8 +82,7 @@ export interface MessagingRepositoryPort {
         opts?: { orderId?: string }
     ): Promise<MessageItem[]>
 
-    // Inserts a message + claims the staged attachments (sets their messageId)
-    // + updates the thread's lastMessageAt — all in one $transaction.
+    // Inserts message + claims staged attachments + updates lastMessageAt in one $transaction.
     insertMessage(input: {
         threadId: string
         senderId: string
@@ -102,11 +91,8 @@ export interface MessagingRepositoryPort {
         attachmentIds: string[]
     }): Promise<MessageItem>
 
-    // Inserts a system event message — senderId is null, orderId is required.
-    // body is `JSON.stringify({ type, payload })` so the frontend's
-    // <SystemEventPill /> can pick the right copy + icon tier.
-    // Called from inside the orders module's transition $transactions, with
-    // the same `tx` Prisma client so atomicity is preserved.
+    // senderId is null, orderId required. body = JSON.stringify({ type, payload })
+    // for <SystemEventPill />. Pass the same `tx` Prisma client for atomicity.
     insertSystemEvent(input: {
         threadId: string
         orderId: string
@@ -119,18 +105,14 @@ export interface MessagingRepositoryPort {
 
     getMessageById(messageId: string, viewerId: string): Promise<MessageItem | null>
 
-    // ---- Read cursor ----
     markThreadRead(threadId: string, userId: string): Promise<{ unreadCleared: number; lastReadAt: Date }>
 
     getUnreadCount(userId: string): Promise<number>
 
-    // ---- Files ----
-    // When orderId is provided, restricts to attachments on messages tagged
-    // with that order — used by the Order Workspace's Files modal so it
-    // shows only THIS order's files, not the whole inbox history.
+    // When orderId is provided, restricts to attachments on messages tagged with
+    // that order — scopes the Order Workspace Files modal to this order only.
     listThreadFiles(threadId: string, viewerId: string, opts?: { orderId?: string }): Promise<FileItem[]>
 
-    // ---- Attachments (staging) ----
     stageAttachment(input: {
         senderId: string
         key: string
@@ -139,28 +121,18 @@ export interface MessagingRepositoryPort {
         mime: string
     }): Promise<StagedAttachment>
 
-    // Authorizes that the viewer is the original uploader (or a participant
-    // of the message it ended up in) before resolving the URL. Returns the
-    // filename too so the controller can build a download-friendly
-    // Content-Disposition.
+    // Returns null if viewer is neither the uploader nor a thread participant.
     getAttachmentForResolve(
         attachmentId: string,
         viewerId: string
     ): Promise<{ id: string; key: string; name: string } | null>
 
-    // ---- Response-time stats ----
-    // Returns the median seller-response delay (in seconds, capped per-pair
-    // at 24h) over the last `days` window, plus the number of "session"
-    // samples that contributed. A session = (first inbound after the
-    // viewer's previous outbound) → (next outbound). One pair per session
-    // — multiple back-and-forth inbound bursts collapse into one sample so
-    // a fast small-talk thread can't dominate the average.
+    // Median seller-response delay (seconds, capped at 24h per pair) over `days`.
+    // Multiple inbound bursts between outbounds collapse into one sample.
     getResponseTimeSamples(userId: string, days: number): Promise<{ medianSeconds: number | null; sampleCount: number }>
 
-    // ---- Presence ----
     setLastSeen(userId: string, at: Date): Promise<void>
 
-    // Returns the list of user ids that share a thread with the given user.
-    // Used to scope presence:update emits.
+    // Used to scope presence:update emits to relevant peers only.
     listThreadPeers(userId: string): Promise<string[]>
 }

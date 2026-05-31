@@ -3,26 +3,24 @@
 
 model Gig {
   id           String @id @default(uuid())
-  sellerId     String // FK to User.id. Filter buyer/seller queries with isAdmin=false.
-  categoryId   String // FK to Category.id.
+  sellerId     String // Filter buyer/seller queries with isAdmin=false.
+  categoryId   String
   title        String // 10-80 chars (app-enforced)
   description  String // 100-5000 chars (app-enforced)
   priceVnd     Int // Integer VND, 10_000-50_000_000 (app-enforced)
   deliveryDays Int // 1-30 (app-enforced)
 
-  // Status: one of Pending / Active / Paused / Rejected / Deleted.
-  // App-level enum, not Postgres ENUM (per schema convention).
+  // App-level string enum, not Postgres ENUM (per schema convention).
   status String @default("Pending")
 
-  // Rejection metadata (populated by admin in Feature 05).
   rejectionCategory String? // Pricing / Description / Image quality / Policy violation / Other
-  rejectionReason   String? // Admin feedback. Min 20 chars when present.
+  rejectionReason   String? // Min 20 chars when present (admin feedback).
 
   // Denormalized: id of the GigImage with position=0. Recomputed on insert / delete / reorder.
   coverImageId String?
 
-  submittedAt DateTime? @db.Timestamptz(6) // First Pending transition
-  approvedAt  DateTime? @db.Timestamptz(6) // Feature 05 will set
+  submittedAt DateTime? @db.Timestamptz(6)
+  approvedAt  DateTime? @db.Timestamptz(6)
   pausedAt    DateTime? @db.Timestamptz(6)
 
   createdAt DateTime  @default(now()) @db.Timestamptz(6)
@@ -30,16 +28,13 @@ model Gig {
   deletedAt DateTime? @db.Timestamptz(6)
   deletedBy String?
 
-  // Relations
   images  GigImage[]
   bullets GigBullet[]
   faqs    GigFaq[]
   savedBy SavedGig[]
+  orders  Order[]
 
-  // Relations (Feature 09/10)
-  orders Order[]
-
-  // Explicit relation to Category (enables _count aggregate for F06 activeGigCount)
+  // Explicit relation required for _count aggregate (F06 activeGigCount).
   category Category @relation(fields: [categoryId], references: [id])
 
   @@index([sellerId])

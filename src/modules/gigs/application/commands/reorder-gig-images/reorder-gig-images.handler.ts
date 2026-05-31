@@ -15,7 +15,6 @@ export class ReorderGigImagesHandler implements ICommandHandler<ReorderGigImages
         if (command.imageIds.length === 0) {
             throw new BadRequestException('imageIds cannot be empty.')
         }
-        // Duplicates check
         const seen = new Set<string>()
         for (const id of command.imageIds) {
             if (seen.has(id)) {

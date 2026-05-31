@@ -63,7 +63,7 @@ interface WirePendingExtension {
     id: string
     orderId: string
     requestedById: string
-    daysRequested: number
+    hoursRequested: number
     reason: string | null
     status: string
     expiresAt: string

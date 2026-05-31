@@ -67,13 +67,11 @@ export class CreateGigHandler implements ICommandHandler<CreateGigCommand> {
             throw new BadRequestException(`Delivery time must be ${DELIVERY_MIN}-${DELIVERY_MAX} days.`)
         }
 
-        // Category must exist.
         const category = await this.categoryRepo.findById(command.categoryId)
         if (!category) {
             throw new CategoryNotFoundForGigException(command.categoryId)
         }
 
-        // Images: at least 1, at most 10, all orphan + owned by caller.
         if (command.imageIds.length < MIN_IMAGES) {
             throw new BadRequestException('At least 1 image is required.')
         }
@@ -92,7 +90,6 @@ export class CreateGigHandler implements ICommandHandler<CreateGigCommand> {
             }
         }
 
-        // Bullets
         if (command.bullets.length > MAX_BULLETS) {
             throw new GigBulletCapReachedException()
         }
@@ -103,7 +100,6 @@ export class CreateGigHandler implements ICommandHandler<CreateGigCommand> {
             }
         }
 
-        // FAQs
         if (command.faqs.length > MAX_FAQS) {
             throw new GigFaqCapReachedException()
         }

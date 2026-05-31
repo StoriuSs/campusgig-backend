@@ -2,9 +2,10 @@ import { CommandHandler, ICommandHandler, EventBus } from '@nestjs/cqrs'
 import { Inject } from '@nestjs/common'
 import { SetUsernameCommand } from './set-username.command'
 import { UserRepositoryPort, USER_REPOSITORY_PORT } from '@/modules/users/domain'
-import { UserNotFoundException, UsernameAlreadySetException } from '@/modules/users/domain'
+import { UserNotFoundException, UsernameAlreadySetException, UsernameTakenException } from '@/modules/users/domain'
 import { UserProfileUpdatedEvent } from '../../events/user-profile-updated.event'
 import { UserEntity } from '@/modules/users/domain'
+import { isReservedSystemUsername } from '@/shared/constants/platform'
 
 @CommandHandler(SetUsernameCommand)
 export class SetUsernameHandler implements ICommandHandler<SetUsernameCommand> {
@@ -14,24 +15,25 @@ export class SetUsernameHandler implements ICommandHandler<SetUsernameCommand> {
     ) {}
 
     async execute(command: SetUsernameCommand): Promise<UserEntity> {
-        // 1. Check if user exists
         const user = await this.userRepo.findById(command.userId)
         if (!user) {
             throw new UserNotFoundException(command.userId)
         }
 
-        // 2. Check if username already set
         if (user.hasSetUsername) {
             throw new UsernameAlreadySetException()
         }
 
-        // 3. Update username (repository throws UsernameTakenException on conflict)
+        // Reserved sentinels surface as "taken" — effect is identical to the user.
+        if (isReservedSystemUsername(command.username)) {
+            throw new UsernameTakenException(command.username)
+        }
+
         const updatedUser = await this.userRepo.update(command.userId, {
             username: command.username,
             hasSetUsername: true
         })
 
-        // 4. Publish event for cache invalidation
         this.eventBus.publish(new UserProfileUpdatedEvent(updatedUser.id, updatedUser.keycloakId))
 
         return updatedUser

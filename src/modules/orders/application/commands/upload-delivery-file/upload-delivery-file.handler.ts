@@ -48,8 +48,6 @@ export class UploadDeliveryFileHandler implements ICommandHandler<UploadDelivery
     ) {}
 
     async execute(command: UploadDeliveryFileCommand): Promise<DeliveryFileItem> {
-        // Authorize seller for this order — uses the same viewer guard the
-        // workspace queries use, then checks the seller-only condition.
         const order = await this.repo.findByIdForViewer(command.orderId, command.viewerId)
         if (!order || order.seller.id !== command.viewerId) {
             throw new NotAParticipantException(command.orderId, command.viewerId)

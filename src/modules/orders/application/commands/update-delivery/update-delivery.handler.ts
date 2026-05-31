@@ -17,20 +17,13 @@ export class UpdateDeliveryHandler implements ICommandHandler<UpdateDeliveryComm
     ) {}
 
     async execute(command: UpdateDeliveryCommand): Promise<OrderDetail> {
-        // Note is optional — matches deliverWork behaviour. Files do the
-        // talking; the note is just commentary the buyer may already have
-        // gotten via the previous version.
         const note = command.note?.trim() ?? ''
         const stagedFileIds = command.stagedFileIds ?? []
         if (stagedFileIds.length > MAX_FILES_PER_DELIVERY) {
             throw new TooManyDeliveryFilesException(stagedFileIds.length, MAX_FILES_PER_DELIVERY)
         }
 
-        // Repo guards: viewer == seller, status in {Delivered, Awaiting
-        // Finalization}. Inside $transaction: insert Delivery vN+1, claim
-        // staged DeliveryFile rows, write OrderEvent + system event pill.
-        // Auto-complete countdown is preserved (anchored to v1's
-        // reviewDeadline) — this is the anti-gaming rule.
+        // Auto-complete countdown stays anchored to v1's reviewDeadline — re-delivery doesn't reset the clock.
         const result: { order: OrderDetail; delivery: DeliveryItem } = await this.repo.updateDelivery({
             orderId: command.orderId,
             viewerId: command.viewerId,

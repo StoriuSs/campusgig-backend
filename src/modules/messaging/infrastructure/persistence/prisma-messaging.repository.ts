@@ -12,8 +12,7 @@ import {
 } from '../../domain/ports'
 import { Inject } from '@nestjs/common'
 
-// Normalize a pair so userAId < userBId. Single composite unique on
-// (userAId, userBId) covers both directions of the conversation.
+// Normalize pair so the (userAId, userBId) unique covers both directions.
 function normalizePair(a: string, b: string): { userAId: string; userBId: string } {
     return a < b ? { userAId: a, userBId: b } : { userAId: b, userBId: a }
 }
@@ -24,8 +23,6 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
         private readonly prisma: PrismaService,
         @Inject(PRESENCE_PORT) private readonly presence: PresencePort
     ) {}
-
-    // ── Mappers ────────────────────────────────────────────────────────────
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     private toAttachment(a: any): AttachmentItem {
@@ -55,8 +52,6 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
             readByRecipient
         }
     }
-
-    // ── Threads ────────────────────────────────────────────────────────────
 
     async createOrGetThread(userAId: string, userBId: string): Promise<{ id: string; createdNow: boolean }> {
         const pair = normalizePair(userAId, userBId)
@@ -138,7 +133,6 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
             })
         ])
 
-        // Unread counts in one batched query.
         const threadIds = threads.map((t) => t.id)
 
         const unreadCounts = new Map<string, number>()
@@ -190,15 +184,13 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
         return { items, total }
     }
 
-    // ── Messages ───────────────────────────────────────────────────────────
-
     async listMessages(
         threadId: string,
         beforeId: string | null,
         pageSize: number,
         opts?: { orderId?: string }
     ): Promise<MessageItem[]> {
-        // Cursor: createdAt < $before.createdAt OR (eq AND id < $before.id)
+        // Cursor: createdAt < before.createdAt OR (eq AND id < before.id)
         let beforeRow: { createdAt: Date; id: string } | null = null
         if (beforeId) {
             beforeRow = await this.prisma.message.findUnique({
@@ -207,28 +199,8 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
             })
         }
 
-        // Filter strategy:
-        //
-        // • Inbox view (no orderId): show EVERYTHING in the thread — user
-        //   messages AND system events. The frontend already renders
-        //   senderId=null messages as coloured pills, and the order code
-        //   embedded in each pill disambiguates events across multiple
-        //   orders the two parties have. Inbox is the unified view.
-        //
-        // • Order Workspace view (orderId set): the buyer↔seller has one
-        //   thread shared across all their orders. Per spec, any chat
-        //   they exchange WHILE this order is active belongs in the
-        //   order's workspace; once terminal (Completed / Cancelled /
-        //   Frozen) the workspace is read-only history. So:
-        //     - System events with this orderId always show (pinned to
-        //       the order regardless of timing).
-        //     - User messages show if their createdAt is in the active
-        //       window [placedAt, terminalAt or now]. That captures both
-        //       workspace-composer sends AND inbox sends during the
-        //       order's lifetime.
-        //   Frozen state has no explicit timestamp so we treat it like
-        //   "still showing" for v1; refinement would query the latest
-        //   OrderEvent of the frozen-class type.
+        // Workspace view: system events tagged to this order always show; user
+        // messages limited to [placedAt, terminalAt or now]. Inbox view: full thread.
         let userMsgWindow: { gte: Date; lte?: Date } | null = null
         if (opts?.orderId) {
             const order = await this.prisma.order.findUnique({
@@ -256,11 +228,7 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
         const scopeFilter = opts?.orderId
             ? {
                   OR: [
-                      // System events: must be tagged to this exact order.
                       { senderId: null, orderId: opts.orderId },
-                      // User messages: any sender, any orderId tag (legacy
-                      // tagged sends still appear); time window narrows the
-                      // set to messages exchanged while the order was live.
                       {
                           senderId: { not: null },
                           createdAt: userMsgWindow as { gte: Date; lte?: Date }
@@ -293,9 +261,7 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
 
         if (messages.length === 0) return []
 
-        // For readByRecipient: a sent-by-X message is "read" iff the OTHER
-        // participant's cursor.lastReadAt >= message.createdAt. In a 2-person
-        // thread we fetch both cursors and pick by senderId per-message.
+        // readByRecipient: msg is read iff the OTHER participant's cursor.lastReadAt >= msg.createdAt.
         const cursors = await this.prisma.messageReadCursor.findMany({
             where: { threadId },
             select: { userId: true, lastReadAt: true }
@@ -361,9 +327,7 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         tx?: any
     }): Promise<MessageItem> {
-        // Runs inside the order-transition $transaction when `tx` is supplied
-        // — atomic with the Order state flip. Falls back to this.prisma when
-        // called outside a transaction (rare; mostly here for ad-hoc smoke).
+        // Use caller's tx (atomic with the Order state flip) when supplied.
         const client = input.tx ?? this.prisma
         const body = JSON.stringify({ type: input.type, payload: input.payload })
 
@@ -376,9 +340,7 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
                 createdAt: input.at
             }
         })
-        // System events don't bump the thread's lastMessageAt — that field
-        // drives the Inbox sidebar ordering, which excludes system events
-        // anyway. Leaving lastMessageAt untouched keeps the sidebar honest.
+        // Don't bump lastMessageAt — Inbox sidebar excludes system events.
         return this.toMessage({ ...message, attachments: [] }, null)
     }
 
@@ -395,19 +357,15 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
         return this.toMessage(m, null)
     }
 
-    // ── Read cursor ────────────────────────────────────────────────────────
-
     async markThreadRead(threadId: string, userId: string): Promise<{ unreadCleared: number; lastReadAt: Date }> {
         const now = new Date()
 
-        // Find latest message in thread (for lastReadMessageId snapshot).
         const latest = await this.prisma.message.findFirst({
             where: { threadId },
             orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
             select: { id: true }
         })
 
-        // Previous cursor (to compute unreadCleared).
         const prev = await this.prisma.messageReadCursor.findUnique({
             where: { threadId_userId: { threadId, userId } },
             select: { lastReadAt: true }
@@ -416,8 +374,7 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
         const unreadCleared = await this.prisma.message.count({
             where: {
                 threadId,
-                // senderId NOT NULL AND senderId != userId — messages we've
-                // received (peer-sent), not system events and not our own sends.
+                // Peer-sent only — exclude system events and own sends.
                 AND: [{ senderId: { not: null } }, { senderId: { not: userId } }],
                 ...(prev?.lastReadAt ? { createdAt: { gt: prev.lastReadAt } } : {})
             }
@@ -441,10 +398,7 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
     }
 
     async getUnreadCount(userId: string): Promise<number> {
-        // Semantics: number of THREADS that contain at least one unread peer
-        // message — matches the dotted-row count in the popover and the
-        // Messenger/Facebook badge convention. Per-message totals stay
-        // available via Conversation.unreadCount.
+        // Counts THREADS with at least one unread peer message, not individual messages.
         const raw = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
             SELECT COUNT(DISTINCT m."threadId")::bigint as count
             FROM "Message" m
@@ -459,11 +413,38 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
         return raw[0] ? Number(raw[0].count) : 0
     }
 
-    // ── Files ──────────────────────────────────────────────────────────────
-
     async listThreadFiles(threadId: string, _viewerId: string, opts?: { orderId?: string }): Promise<FileItem[]> {
-        const messageWhere: { threadId: string; orderId?: string } = { threadId }
-        if (opts?.orderId) messageWhere.orderId = opts.orderId
+        // Order-scoped: filter by message.createdAt in the order's active window.
+        // Can't filter by message.orderId — workspace messages aren't tagged post unified-thread refactor.
+        let messageWhere: {
+            threadId: string
+            createdAt?: { gte: Date; lte?: Date }
+        } = { threadId }
+        if (opts?.orderId) {
+            const order = await this.prisma.order.findUnique({
+                where: { id: opts.orderId },
+                select: {
+                    placedAt: true,
+                    status: true,
+                    completedAt: true,
+                    cancelledAt: true
+                }
+            })
+            if (!order) return []
+            const terminalAt: Date | null =
+                order.status === 'Completed'
+                    ? order.completedAt
+                    : order.status === 'Cancelled'
+                      ? order.cancelledAt
+                      : null
+            messageWhere = {
+                threadId,
+                createdAt: {
+                    gte: order.placedAt,
+                    ...(terminalAt ? { lte: terminalAt } : {})
+                }
+            }
+        }
         const attachments = await this.prisma.messageAttachment.findMany({
             where: {
                 messageId: { not: null },
@@ -493,8 +474,6 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
             createdAt: a.createdAt
         }))
     }
-
-    // ── Attachments (staging) ──────────────────────────────────────────────
 
     async stageAttachment(input: {
         senderId: string
@@ -537,11 +516,8 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
         })
         if (!a) return null
 
-        // Staged (no message yet) — only the uploader can resolve.
+        // Staged attachment has no uploader pointer; staged use is single-Send-call only.
         if (!a.message) {
-            // No way to know uploader from the attachment alone. For F08
-            // staged attachments are only used inside the same Send call,
-            // so this path should never be hit by a different user.
             return null
         }
 
@@ -550,17 +526,12 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
         return { id: a.id, key: a.key, name: a.name }
     }
 
-    // ── Response-time stats ────────────────────────────────────────────────
-
     async getResponseTimeSamples(
         userId: string,
         days: number
     ): Promise<{ medianSeconds: number | null; sampleCount: number }> {
-        // For each outbound message O sent by the user, find the FIRST inbound
-        // I in the same thread where I came after the user's previous outbound
-        // (LAG over outbounds) but before O. That collapses a burst of buyer
-        // messages into a single "session" with one response-time sample.
-        // Cap each pair at 24h so a vacation reply can't poison the median.
+        // One sample per "session": gap between first inbound after prev outbound and current outbound.
+        // Capped at 24h so a vacation reply doesn't poison the median.
         const raw = await this.prisma.$queryRaw<Array<{ sample_count: bigint; median_seconds: string | null }>>`
             WITH outbounds AS (
                 SELECT
@@ -609,8 +580,6 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
         const medianSeconds = row.median_seconds != null ? Number(row.median_seconds) : null
         return { medianSeconds, sampleCount }
     }
-
-    // ── Presence ───────────────────────────────────────────────────────────
 
     async setLastSeen(userId: string, at: Date): Promise<void> {
         await this.prisma.user.update({

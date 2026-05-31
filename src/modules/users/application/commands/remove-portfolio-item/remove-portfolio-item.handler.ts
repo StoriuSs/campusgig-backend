@@ -12,8 +12,6 @@ export class RemovePortfolioItemHandler implements ICommandHandler<RemovePortfol
     ) {}
 
     async execute(command: RemovePortfolioItemCommand): Promise<void> {
-        // Repo returns the deleted entity so we have the imageKey for the S3
-        // cleanup event. Throws PortfolioItemNotFoundException on miss.
         const deleted = await this.userRepo.removePortfolioItem(command.userId, command.itemId)
 
         this.eventBus.publish(new PortfolioItemDeletedEvent(command.userId, deleted.imageKey))

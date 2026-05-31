@@ -21,16 +21,14 @@ export class UploadAvatarHandler implements ICommandHandler<UploadAvatarCommand>
     ) {}
 
     async execute(command: UploadAvatarCommand): Promise<UploadAvatarResult> {
-        // 1. Get current avatar URL and upload new file in parallel
         const [currentAvatarUrl, uploadedFile] = await Promise.all([
             this.userRepo.findAvatarUrl(command.userId),
             this.storage.uploadAvatar(command.fileBuffer, command.originalName, command.userId)
         ])
 
-        // 2. Update user's avatar in database
         const user = await this.userRepo.update(command.userId, { avatarUrl: uploadedFile.key })
 
-        // 3. Publish events — handlers will deal with cleanup and cache
+        // AvatarUploadedEvent triggers old-file S3 cleanup via CleanupOldAvatarHandler.
         if (currentAvatarUrl) {
             this.eventBus.publish(new AvatarUploadedEvent(user.id, currentAvatarUrl))
         }

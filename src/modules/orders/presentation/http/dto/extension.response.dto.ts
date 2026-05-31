@@ -8,7 +8,7 @@ export class ExtensionResponseDto {
     @Expose() @IsString() id!: string
     @Expose() @IsString() orderId!: string
     @Expose() @IsString() requestedById!: string
-    @Expose() @IsInt() @Min(1) daysRequested!: number
+    @Expose() @IsInt() @Min(1) hoursRequested!: number
     @Expose() @IsOptional() @IsString() reason!: string | null
     @Expose() @IsIn(EXTENSION_STATUSES) status!: (typeof EXTENSION_STATUSES)[number]
     @Expose() @IsString() expiresAt!: string

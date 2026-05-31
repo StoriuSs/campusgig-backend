@@ -17,20 +17,12 @@ export class DeliverWorkHandler implements ICommandHandler<DeliverWorkCommand> {
     ) {}
 
     async execute(command: DeliverWorkCommand): Promise<OrderDetail> {
-        // Delivery note is optional — buyers usually only need the files.
-        // Empty string normalises to an empty body; the repo trims again
-        // for safety. Files-only deliveries are valid.
         const note = command.note?.trim() ?? ''
         const stagedFileIds = command.stagedFileIds ?? []
         if (stagedFileIds.length > MAX_FILES_PER_DELIVERY) {
             throw new TooManyDeliveryFilesException(stagedFileIds.length, MAX_FILES_PER_DELIVERY)
         }
 
-        // Repo guards: viewer == seller, status in {InProgress, Late}. Inside
-        // $transaction: insert Delivery v1, claim DeliveryFile rows by id,
-        // flip status to Delivered, set deliveredAt + reviewDeadline,
-        // schedule ReviewDeadlineJob, remove DeliveryDeadlineJob, write
-        // OrderEvent + system message.
         const result: { order: OrderDetail; delivery: DeliveryItem } = await this.repo.deliverWork({
             orderId: command.orderId,
             viewerId: command.viewerId,
