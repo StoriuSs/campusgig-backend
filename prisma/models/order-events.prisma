@@ -29,6 +29,8 @@ enum OrderEventType {
   AcceptDelivery
   AutoCompleted
   Finalized
+  DisputeFiled
+  DisputeResolved
 }
 
 model OrderEvent {

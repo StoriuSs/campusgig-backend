@@ -123,6 +123,6 @@ const EventHandlers = [
         ...QueryHandlers,
         ...EventHandlers
     ],
-    exports: [ORDERS_REPOSITORY_PORT]
+    exports: [ORDERS_REPOSITORY_PORT, DELIVERY_STORAGE_PORT]
 })
 export class OrdersModule {}

@@ -654,4 +654,94 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
         }
         return tx ? run(tx) : this.prisma.$transaction(run)
     }
+
+    async splitFromEscrow(
+        buyerId: string,
+        sellerId: string,
+        platformUserId: string,
+        shares: { buyerRefundVnd: number; sellerEarningVnd: number; platformFeeVnd: number },
+        orderId: string,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tx?: any
+    ): Promise<{ refund?: TransactionItem; earning?: TransactionItem; platformFee?: TransactionItem }> {
+        const { buyerRefundVnd, sellerEarningVnd, platformFeeVnd } = shares
+        const total = buyerRefundVnd + sellerEarningVnd + platformFeeVnd
+
+        const run = async (
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            client: any
+        ): Promise<{ refund?: TransactionItem; earning?: TransactionItem; platformFee?: TransactionItem }> => {
+            // The full escrowed amount leaves the buyer; only the refund share
+            // comes back to their wallet, the rest goes to seller + platform.
+            const buyerAfter = await client.user.update({
+                where: { id: buyerId },
+                data: {
+                    escrowBalance: { decrement: total },
+                    ...(buyerRefundVnd > 0 ? { walletBalance: { increment: buyerRefundVnd } } : {})
+                },
+                select: { walletBalance: true }
+            })
+
+            const result: { refund?: TransactionItem; earning?: TransactionItem; platformFee?: TransactionItem } = {}
+
+            if (buyerRefundVnd > 0) {
+                const refund = await client.transaction.create({
+                    data: {
+                        userId: buyerId,
+                        type: 'Refund',
+                        direction: 'Incoming',
+                        status: 'Completed',
+                        amountVnd: buyerRefundVnd,
+                        balanceAfterVnd: buyerAfter.walletBalance,
+                        orderId,
+                        description: `Partial refund from disputed order ${orderId}`
+                    }
+                })
+                result.refund = this.toTransaction(refund)
+            }
+            if (sellerEarningVnd > 0) {
+                const sellerAfter = await client.user.update({
+                    where: { id: sellerId },
+                    data: { walletBalance: { increment: sellerEarningVnd } },
+                    select: { walletBalance: true }
+                })
+                const earning = await client.transaction.create({
+                    data: {
+                        userId: sellerId,
+                        type: 'Earning',
+                        direction: 'Incoming',
+                        status: 'Completed',
+                        amountVnd: sellerEarningVnd,
+                        balanceAfterVnd: sellerAfter.walletBalance,
+                        orderId,
+                        description: `Earned from disputed order ${orderId}`
+                    }
+                })
+                result.earning = this.toTransaction(earning)
+            }
+            if (platformFeeVnd > 0) {
+                const platformAfter = await client.user.update({
+                    where: { id: platformUserId },
+                    data: { walletBalance: { increment: platformFeeVnd } },
+                    select: { walletBalance: true }
+                })
+                const platformFee = await client.transaction.create({
+                    data: {
+                        userId: platformUserId,
+                        type: 'Earning',
+                        direction: 'Incoming',
+                        status: 'Completed',
+                        amountVnd: platformFeeVnd,
+                        balanceAfterVnd: platformAfter.walletBalance,
+                        orderId,
+                        description: `Platform fee from disputed order ${orderId}`
+                    }
+                })
+                result.platformFee = this.toTransaction(platformFee)
+            }
+
+            return result
+        }
+        return tx ? run(tx) : this.prisma.$transaction(run)
+    }
 }

@@ -166,7 +166,8 @@ export class MessagesController {
                         : null,
                     unreadCount: item.unreadCount,
                     online: item.online,
-                    lastSeenAt: item.lastSeenAt ? item.lastSeenAt.toISOString() : null
+                    lastSeenAt: item.lastSeenAt ? item.lastSeenAt.toISOString() : null,
+                    frozen: item.frozen
                 })
             })
         )

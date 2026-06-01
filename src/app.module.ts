@@ -53,6 +53,7 @@ import { WalletModule } from '@/modules/wallet/wallet.module'
 import { MessagingModule } from '@/modules/messaging/messaging.module'
 import { OrdersModule } from '@/modules/orders/orders.module'
 import { ReviewsModule } from '@/modules/reviews/reviews.module'
+import { DisputesModule } from '@/modules/disputes/disputes.module'
 
 import { KeycloakAuthGuard } from '@/shared/infrastructure'
 import { RolesGuard } from '@/shared/infrastructure'
@@ -154,7 +155,8 @@ import { RolesGuard } from '@/shared/infrastructure'
         WalletModule,
         MessagingModule,
         OrdersModule,
-        ReviewsModule
+        ReviewsModule,
+        DisputesModule
     ],
     providers: [
         {

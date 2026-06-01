@@ -1,0 +1,92 @@
+// Feature 12 — Disputes (filing + admin verdict).
+// One dispute per order (orderId @unique). Filing freezes the order until an
+// admin verdict releases or refunds the escrow. Two unrelated timers:
+// Order.disputeDeadline = 7-day auto-complete window; Dispute.responseDeadline
+// = 48h counterparty-response window.
+
+enum DisputeStatus {
+  AwaitingResponse // counterparty has 48h to respond
+  ReadyForReview // responded or timed out — admin can act
+  Resolved // verdict issued; order is terminal
+}
+
+enum DisputeParty {
+  Buyer
+  Seller
+}
+
+enum DisputeVerdict {
+  RefundBuyer
+  CompleteForSeller
+  SplitFunds
+}
+
+enum DisputeReasonCode {
+  // Buyer-filed
+  WorkNotAsDescribed
+  SellerNeverDelivered
+  SellerHarassment
+  BuyerOther
+  // Seller-filed
+  BuyerOutOfScope
+  BuyerReviewThreat
+  BuyerUnreachable
+  SellerOther
+}
+
+model Dispute {
+  id      String @id @default(uuid())
+  orderId String @unique
+
+  filedByUserId  String
+  filedByRole    DisputeParty
+  reasonCode     DisputeReasonCode
+  filerStatement String // 30-2000 chars (app-enforced)
+
+  respondedAt        DateTime? @db.Timestamptz(6)
+  responderStatement String? // 30-2000 when present
+
+  status           DisputeStatus @default(AwaitingResponse)
+  responseDeadline DateTime      @db.Timestamptz(6) // filedAt + 48h
+
+  verdict            DisputeVerdict?
+  buyerRefundPercent Int? // 0-80, SplitFunds only
+  adminNotes         String? // internal — never returned to user-facing endpoints
+  resolvedByUserId   String?
+  resolvedAt         DateTime?       @db.Timestamptz(6)
+
+  filedAt   DateTime @default(now()) @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  order      Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  filedBy    User              @relation("DisputeFiler", fields: [filedByUserId], references: [id])
+  resolvedBy User?             @relation("DisputeResolver", fields: [resolvedByUserId], references: [id])
+  evidence   DisputeEvidence[]
+
+  @@index([status, filedAt])
+  @@index([filedByRole])
+}
+
+// One row per uploaded evidence file. Mirrors DeliveryFile's stage-then-claim
+// pattern: the upload endpoint inserts a row with `disputeId = null` (evidence
+// is uploaded in the modal before the dispute exists), and the filing/response
+// command claims it by id. `orderId` scopes staging + ownership; `side` is the
+// uploader's order role, set at upload. Reuses the delivery-file S3 pipeline.
+model DisputeEvidence {
+  id               String       @id @default(uuid())
+  disputeId        String? // null while staged (before the filing/response claims it)
+  orderId          String // staging scope + ownership check before the dispute exists
+  side             DisputeParty
+  uploadedByUserId String // audit only — no relation (matches OrderEvent.actorUserId)
+  fileKey          String // S3 object key; resolved to a presigned URL on read
+  name             String
+  size             Int
+  mime             String
+  createdAt        DateTime     @default(now()) @db.Timestamptz(6)
+
+  dispute Dispute? @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  @@index([disputeId])
+  @@index([orderId, uploadedByUserId])
+}

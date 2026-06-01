@@ -6,6 +6,7 @@ import { DeliveryResponseDto } from './delivery.response.dto'
 import { ExtensionResponseDto } from './extension.response.dto'
 import { GigSnapshotResponseDto } from './gig-snapshot.response.dto'
 import { OrderPartyResponseDto } from './order-party.response.dto'
+import { OrderDisputeResponseDto } from './order-dispute.response.dto'
 
 const ORDER_STATUSES = [
     'PendingReview',
@@ -80,4 +81,10 @@ export class OrderDetailResponseDto {
     @ValidateNested()
     @Type(() => OrderReviewResponseDto)
     review!: OrderReviewResponseDto | null
+
+    @Expose()
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => OrderDisputeResponseDto)
+    dispute!: OrderDisputeResponseDto | null
 }

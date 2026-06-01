@@ -36,4 +36,5 @@ export class ConversationItemResponseDto {
     @Expose() @IsInt() @Min(0) unreadCount!: number
     @Expose() @IsBoolean() online!: boolean
     @Expose() @IsOptional() @IsString() lastSeenAt!: string | null
+    @Expose() @IsBoolean() frozen!: boolean
 }

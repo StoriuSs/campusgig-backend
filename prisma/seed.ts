@@ -1103,6 +1103,143 @@ async function seedGigViews(gigs: SeededGig[]): Promise<void> {
     console.log(`  ✓ ${total} gig views across ${activeGigs.length} active gigs`)
 }
 
+// F12 — disputes across statuses on the demo buyers' disputable orders. Money
+// isn't moved here (the resolved payout is computed from price + verdict on
+// read), so wallet balances stay as seeded — fine for the demo.
+const DISPUTE_PLATFORM_USER_ID = '00000000-0000-0000-0000-000000000001'
+const HOUR = 60 * 60 * 1000
+
+async function seedDisputes(users: SeededUser[]): Promise<void> {
+    console.log('  → creating disputes…')
+    const demoBuyerIds = users.slice(0, 3).map((u) => u.id)
+    if (demoBuyerIds.length === 0) return
+
+    const candidates = await prisma.order.findMany({
+        where: {
+            buyerId: { in: demoBuyerIds },
+            status: { in: ['InProgress', 'Late', 'Delivered', 'AwaitingFinalization'] }
+        },
+        select: { id: true, buyerId: true, sellerId: true, number: true },
+        take: 12
+    })
+
+    const buyerStatement =
+        'The delivered work does not match what we agreed on in chat. Several key requirements are missing and I have asked for fixes multiple times with no result.'
+    const sellerStatement =
+        'The buyer keeps demanding extra work far beyond the agreed scope and is threatening a bad review unless I comply. I delivered exactly what was ordered.'
+    const responderStatement =
+        'Here is my side: I delivered everything that was agreed, and the requested changes were never part of the original order.'
+
+    const scenarios = [
+        { kind: 'awaiting', role: 'Buyer', reason: 'WorkNotAsDescribed', deadlineH: 36 },
+        { kind: 'awaiting', role: 'Seller', reason: 'BuyerOutOfScope', deadlineH: 11 },
+        { kind: 'ready', role: 'Buyer', reason: 'SellerNeverDelivered' },
+        { kind: 'resolved', role: 'Buyer', reason: 'WorkNotAsDescribed', verdict: 'RefundBuyer' },
+        { kind: 'resolved', role: 'Seller', reason: 'BuyerReviewThreat', verdict: 'CompleteForSeller' },
+        { kind: 'resolved', role: 'Buyer', reason: 'WorkNotAsDescribed', verdict: 'SplitFunds', buyerRefundPercent: 40 }
+    ] as const
+
+    const now = Date.now()
+    let made = 0
+
+    for (let i = 0; i < scenarios.length && i < candidates.length; i++) {
+        const order = candidates[i]
+        const s = scenarios[i]
+        const filedByUserId = s.role === 'Buyer' ? order.buyerId : order.sellerId
+        const filerStatement = s.role === 'Buyer' ? buyerStatement : sellerStatement
+        const filedEvent = {
+            orderId: order.id,
+            type: 'DisputeFiled' as const,
+            actorUserId: filedByUserId,
+            payload: { number: order.number, role: s.role, reasonCode: s.reason }
+        }
+
+        if (s.kind === 'awaiting') {
+            await prisma.$transaction([
+                prisma.dispute.create({
+                    data: {
+                        orderId: order.id,
+                        filedByUserId,
+                        filedByRole: s.role,
+                        reasonCode: s.reason,
+                        filerStatement,
+                        status: 'AwaitingResponse',
+                        responseDeadline: new Date(now + s.deadlineH * HOUR),
+                        filedAt: new Date(now - (48 - s.deadlineH) * HOUR)
+                    }
+                }),
+                prisma.order.update({ where: { id: order.id }, data: { status: 'Frozen' } }),
+                prisma.orderEvent.create({ data: filedEvent })
+            ])
+        } else if (s.kind === 'ready') {
+            await prisma.$transaction([
+                prisma.dispute.create({
+                    data: {
+                        orderId: order.id,
+                        filedByUserId,
+                        filedByRole: s.role,
+                        reasonCode: s.reason,
+                        filerStatement,
+                        respondedAt: new Date(now - 2 * HOUR),
+                        responderStatement,
+                        status: 'ReadyForReview',
+                        responseDeadline: new Date(now + 30 * HOUR),
+                        filedAt: new Date(now - 18 * HOUR)
+                    }
+                }),
+                prisma.order.update({ where: { id: order.id }, data: { status: 'Frozen' } }),
+                prisma.orderEvent.create({ data: filedEvent })
+            ])
+        } else {
+            const terminal = s.verdict === 'RefundBuyer' ? 'Cancelled' : 'Completed'
+            await prisma.$transaction([
+                prisma.dispute.create({
+                    data: {
+                        orderId: order.id,
+                        filedByUserId,
+                        filedByRole: s.role,
+                        reasonCode: s.reason,
+                        filerStatement,
+                        respondedAt: new Date(now - 50 * HOUR),
+                        responderStatement,
+                        status: 'Resolved',
+                        responseDeadline: new Date(now - 24 * HOUR),
+                        verdict: s.verdict,
+                        buyerRefundPercent: s.verdict === 'SplitFunds' ? s.buyerRefundPercent : null,
+                        resolvedByUserId: DISPUTE_PLATFORM_USER_ID,
+                        resolvedAt: new Date(now - 12 * HOUR),
+                        filedAt: new Date(now - 72 * HOUR)
+                    }
+                }),
+                prisma.order.update({
+                    where: { id: order.id },
+                    data:
+                        terminal === 'Cancelled'
+                            ? {
+                                  status: 'Cancelled',
+                                  cancelledAt: new Date(now - 12 * HOUR),
+                                  cancelledByUserId: DISPUTE_PLATFORM_USER_ID,
+                                  cancellationReason: 'Dispute resolved — full refund'
+                              }
+                            : { status: 'Completed', completedAt: new Date(now - 12 * HOUR) }
+                }),
+                prisma.orderEvent.create({ data: filedEvent }),
+                prisma.orderEvent.create({
+                    data: {
+                        orderId: order.id,
+                        type: 'DisputeResolved' as const,
+                        actorUserId: DISPUTE_PLATFORM_USER_ID,
+                        payload: { number: order.number, verdict: s.verdict }
+                    }
+                })
+            ])
+        }
+        made++
+    }
+
+    console.log(`  ✓ ${made} disputes seeded`)
+}
+
 async function seedOneOrder(
     buyer: SeededUser,
     gig: {
@@ -1605,6 +1742,7 @@ async function main(): Promise<void> {
     await seedMessages(users)
     await seedOrders(users)
     await seedGigViews(gigs)
+    await seedDisputes(users)
 
     const elapsed = ((Date.now() - start) / 1000).toFixed(1)
     console.log(`✅ Seed complete in ${elapsed}s`)

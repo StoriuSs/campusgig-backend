@@ -5,6 +5,7 @@ import { MESSAGING_REPOSITORY_PORT, MessagingRepositoryPort, MessageItem } from 
 import {
     EmptyMessageException,
     NotAThreadParticipantException,
+    ThreadFrozenException,
     TooManyAttachmentsException
 } from '../../../domain/exceptions'
 import { MessageSentEvent, ThreadReadEvent } from '../../../domain/events'
@@ -34,6 +35,13 @@ export class SendMessageHandler implements ICommandHandler<SendMessageCommand> {
         const thread = await this.repo.getThreadById(command.threadId, command.senderId)
         if (!thread) {
             throw new NotAThreadParticipantException(command.threadId, command.senderId)
+        }
+
+        // Lock the thread while an active dispute (Frozen order) exists between
+        // the two — keeps the evidence record clean until an admin resolves it.
+        const frozenWith = await this.repo.frozenCounterpartIds(command.senderId, [thread.otherUserId])
+        if (frozenWith.length > 0) {
+            throw new ThreadFrozenException()
         }
 
         const message = await this.repo.insertMessage({

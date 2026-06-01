@@ -33,6 +33,34 @@ export interface OrderWirePayload {
     pendingCancellation: WirePendingCancellation | null
     deliveryCount: number
     review: WireReview | null
+    dispute: WireDispute | null
+}
+
+interface WireEvidence {
+    id: string
+    side: string
+    name: string
+    size: number
+    mime: string
+    createdAt: string
+}
+
+interface WireDispute {
+    status: string
+    filedByRole: string
+    reasonCode: string
+    filerStatement: string
+    filerEvidence: WireEvidence[]
+    responderStatement: string | null
+    responderEvidence: WireEvidence[]
+    filedAt: string
+    respondedAt: string | null
+    responseDeadline: string
+    verdict: string | null
+    buyerRefundPercent: number | null
+    adminNotes: string | null
+    resolvedAt: string | null
+    payout: { buyerRefundVnd: number; sellerEarningVnd: number; platformFeeVnd: number } | null
 }
 
 interface WireReview {
@@ -162,8 +190,38 @@ export function toOrderWirePayload(order: OrderDetail): OrderWirePayload {
                   repliedAt: order.review.repliedAt?.toISOString() ?? null,
                   createdAt: order.review.createdAt.toISOString()
               }
+            : null,
+        dispute: order.dispute
+            ? {
+                  status: order.dispute.status,
+                  filedByRole: order.dispute.filedByRole,
+                  reasonCode: order.dispute.reasonCode,
+                  filerStatement: order.dispute.filerStatement,
+                  filerEvidence: order.dispute.filerEvidence.map(toEvidenceWire),
+                  responderStatement: order.dispute.responderStatement,
+                  responderEvidence: order.dispute.responderEvidence.map(toEvidenceWire),
+                  filedAt: order.dispute.filedAt.toISOString(),
+                  respondedAt: order.dispute.respondedAt?.toISOString() ?? null,
+                  responseDeadline: order.dispute.responseDeadline.toISOString(),
+                  verdict: order.dispute.verdict,
+                  buyerRefundPercent: order.dispute.buyerRefundPercent,
+                  adminNotes: order.dispute.adminNotes,
+                  resolvedAt: order.dispute.resolvedAt?.toISOString() ?? null,
+                  payout: order.dispute.payout
+              }
             : null
     }
+}
+
+function toEvidenceWire(e: {
+    id: string
+    side: string
+    name: string
+    size: number
+    mime: string
+    createdAt: Date
+}): WireEvidence {
+    return { id: e.id, side: e.side, name: e.name, size: e.size, mime: e.mime, createdAt: e.createdAt.toISOString() }
 }
 
 function toDeliveryWire(d: DeliveryItem): WireDelivery {

@@ -34,6 +34,13 @@ import {
     SellerCannotOrderOwnGigException
 } from '../../domain/exceptions'
 import { OrderJobsScheduler } from '../jobs/order-jobs.scheduler'
+import {
+    computeDisputePayout,
+    DisputeParty,
+    DisputeReasonCode,
+    DisputeVerdict,
+    OrderDisputeInfo
+} from '@/modules/disputes/domain'
 
 const PLATFORM_FEE_PCT = 20
 
@@ -151,7 +158,47 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
                       repliedAt: o.review.repliedAt ?? null,
                       createdAt: o.review.createdAt
                   }
-                : null
+                : null,
+            dispute: o.dispute ? this.toDisputeInfo(o.dispute, o.gigPriceVndSnapshot) : null
+        }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    private toDisputeInfo(d: any, priceVnd: number): OrderDisputeInfo {
+        const filerRole = d.filedByRole as DisputeParty
+        const opposite: DisputeParty = filerRole === 'Buyer' ? 'Seller' : 'Buyer'
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mapEvidence = (rows: any[], side: DisputeParty) =>
+            rows
+                .filter((e) => e.side === side)
+                .map((e) => ({
+                    id: e.id,
+                    side: e.side as DisputeParty,
+                    name: e.name,
+                    size: e.size,
+                    mime: e.mime,
+                    createdAt: e.createdAt
+                }))
+        const evidence = d.evidence ?? []
+        return {
+            status: d.status,
+            filedByRole: filerRole,
+            reasonCode: d.reasonCode as DisputeReasonCode,
+            filerStatement: d.filerStatement,
+            filerEvidence: mapEvidence(evidence, filerRole),
+            responderStatement: d.responderStatement ?? null,
+            responderEvidence: mapEvidence(evidence, opposite),
+            filedAt: d.filedAt,
+            respondedAt: d.respondedAt ?? null,
+            responseDeadline: d.responseDeadline,
+            verdict: d.verdict ?? null,
+            buyerRefundPercent: d.buyerRefundPercent ?? null,
+            adminNotes: d.adminNotes ?? null,
+            resolvedAt: d.resolvedAt ?? null,
+            payout:
+                d.verdict != null
+                    ? computeDisputePayout(priceVnd, d.verdict as DisputeVerdict, d.buyerRefundPercent)
+                    : null
         }
     }
 
@@ -241,7 +288,8 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
                 orderBy: { requestedAt: 'desc' as const },
                 take: 1
             },
-            review: true
+            review: true,
+            dispute: { include: { evidence: { orderBy: { createdAt: 'asc' as const } } } }
         }
     }
 
@@ -330,7 +378,8 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
                     orderBy: { requestedAt: 'desc' as const },
                     take: 1,
                     select: { expiresAt: true, initiator: true, requestedById: true }
-                }
+                },
+                dispute: { select: { filedByUserId: true, status: true } }
             }
         })
 
@@ -366,7 +415,9 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
                     pendingCancelInitiator: pendingCancel?.initiator ?? null,
                     viewerId: input.viewerId,
                     sellerId: o.sellerId,
-                    buyerId: o.buyerId
+                    buyerId: o.buyerId,
+                    disputeFiledById: o.dispute?.filedByUserId ?? null,
+                    disputeStatus: o.dispute?.status ?? null
                 })
             }
         })
@@ -391,6 +442,8 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
         viewerId: string
         sellerId: string
         buyerId: string
+        disputeFiledById?: string | null
+        disputeStatus?: string | null
     }): boolean {
         // Viewer is next-mover OR is the decider on a pending request from the other party.
         if (args.status === 'PendingReview' && args.side === 'seller') return true
@@ -402,6 +455,15 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             // Decider = whoever didn't request.
             if (args.pendingCancelInitiator === 'Buyer' && args.side === 'seller') return true
             if (args.pendingCancelInitiator === 'Seller' && args.side === 'buyer') return true
+        }
+        // Frozen + the responder (counterparty who didn't file) owes a 48h response.
+        if (
+            args.status === 'Frozen' &&
+            args.disputeStatus === 'AwaitingResponse' &&
+            args.disputeFiledById != null &&
+            args.viewerId !== args.disputeFiledById
+        ) {
+            return true
         }
         return false
     }
@@ -435,25 +497,33 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
                 where: {
                     buyerId: viewerId,
                     status: {
-                        in: ['Delivered', 'InProgress', 'Late', 'AwaitingFinalization']
+                        in: ['Delivered', 'InProgress', 'Late', 'AwaitingFinalization', 'Frozen']
                     }
                 },
                 include: {
                     extensions: { where: { status: 'Pending' }, take: 1 },
-                    cancellations: { where: { status: 'Pending' }, take: 1 }
+                    cancellations: { where: { status: 'Pending' }, take: 1 },
+                    dispute: { select: { filedByUserId: true, status: true } }
                 }
             }),
             this.prisma.order.findMany({
                 where: {
                     sellerId: viewerId,
-                    status: { in: ['PendingReview', 'InProgress', 'Late', 'Delivered'] }
+                    status: { in: ['PendingReview', 'InProgress', 'Late', 'Delivered', 'Frozen'] }
                 },
                 include: {
                     extensions: { where: { status: 'Pending' }, take: 1 },
-                    cancellations: { where: { status: 'Pending' }, take: 1 }
+                    cancellations: { where: { status: 'Pending' }, take: 1 },
+                    dispute: { select: { filedByUserId: true, status: true } }
                 }
             })
         ])
+
+        // Responder owes a 48h response on a frozen order they didn't file.
+        const owesDisputeResponse = (o: {
+            status: string
+            dispute: { filedByUserId: string; status: string } | null
+        }) => o.status === 'Frozen' && o.dispute?.status === 'AwaitingResponse' && o.dispute.filedByUserId !== viewerId
 
         const asBuyer = asBuyerRows.filter((o) => {
             if (o.status === 'Delivered') return true
@@ -461,11 +531,13 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
             if (o.status === 'Late') return true
             if (o.extensions.length > 0) return true
             if (o.cancellations.length > 0 && o.cancellations[0].initiator === 'Seller') return true
+            if (owesDisputeResponse(o)) return true
             return false
         }).length
         const asSeller = asSellerRows.filter((o) => {
             if (o.status === 'PendingReview') return true
             if (o.cancellations.length > 0 && o.cancellations[0].initiator === 'Buyer') return true
+            if (owesDisputeResponse(o)) return true
             return false
         }).length
 

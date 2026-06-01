@@ -10,7 +10,8 @@ import {
     TooManyAttachmentsException,
     UnsupportedAttachmentTypeException,
     AttachmentTooLargeException,
-    ThreadNotFoundException
+    ThreadNotFoundException,
+    ThreadFrozenException
 } from '../../domain/exceptions'
 
 @Catch(
@@ -20,7 +21,8 @@ import {
     TooManyAttachmentsException,
     UnsupportedAttachmentTypeException,
     AttachmentTooLargeException,
-    ThreadNotFoundException
+    ThreadNotFoundException,
+    ThreadFrozenException
 )
 export class MessagingDomainExceptionFilter implements ExceptionFilter {
     constructor(private readonly logger: PinoLogger) {}
@@ -123,6 +125,14 @@ export class MessagingDomainExceptionFilter implements ExceptionFilter {
                 status: HttpStatus.NOT_FOUND,
                 code: ERROR_CODES.MESSAGING_THREAD_NOT_FOUND,
                 type: ERROR_TYPES.MESSAGING_THREAD_NOT_FOUND,
+                message: exception.message
+            }
+        }
+        if (exception instanceof ThreadFrozenException) {
+            return {
+                status: HttpStatus.FORBIDDEN,
+                code: ERROR_CODES.MESSAGING_THREAD_FROZEN,
+                type: ERROR_TYPES.MESSAGING_THREAD_FROZEN,
                 message: exception.message
             }
         }

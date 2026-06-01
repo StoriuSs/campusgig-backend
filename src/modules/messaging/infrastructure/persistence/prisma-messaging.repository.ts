@@ -77,6 +77,23 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
         return { id: thread.id, otherUserId }
     }
 
+    async frozenCounterpartIds(viewerId: string, counterpartIds: string[]): Promise<string[]> {
+        if (counterpartIds.length === 0) return []
+        const frozen = await this.prisma.order.findMany({
+            where: {
+                status: 'Frozen',
+                OR: [
+                    { buyerId: viewerId, sellerId: { in: counterpartIds } },
+                    { sellerId: viewerId, buyerId: { in: counterpartIds } }
+                ]
+            },
+            select: { buyerId: true, sellerId: true }
+        })
+        const ids = new Set<string>()
+        for (const o of frozen) ids.add(o.buyerId === viewerId ? o.sellerId : o.buyerId)
+        return [...ids]
+    }
+
     async listConversations(
         viewerId: string,
         page: number,
@@ -154,7 +171,11 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
         }
 
         const otherUserIds = threads.map((t) => (t.userAId === viewerId ? t.userBId : t.userAId))
-        const onlineSet = await this.presence.filterOnline(otherUserIds)
+        const [onlineSet, frozenIds] = await Promise.all([
+            this.presence.filterOnline(otherUserIds),
+            this.frozenCounterpartIds(viewerId, otherUserIds)
+        ])
+        const frozenSet = new Set(frozenIds)
 
         const items: ConversationListItem[] = threads.map((t) => {
             const other = t.userAId === viewerId ? t.userB : t.userA
@@ -177,7 +198,8 @@ export class PrismaMessagingRepository implements MessagingRepositoryPort {
                     : null,
                 unreadCount: unreadCounts.get(t.id) ?? 0,
                 online: onlineSet.has(other.id),
-                lastSeenAt: other.lastSeenAt
+                lastSeenAt: other.lastSeenAt,
+                frozen: frozenSet.has(other.id)
             }
         })
 

@@ -64,6 +64,8 @@ model User {
   ordersAsSeller Order[] @relation("OrderSeller")
   sellerReviews  Review[] @relation("SellerReviews")
   buyerReviews   Review[] @relation("BuyerReviews")
+  filedDisputes    Dispute[] @relation("DisputeFiler")
+  resolvedDisputes Dispute[] @relation("DisputeResolver")
 
   @@index([keycloakId])
   @@index([username])

@@ -638,6 +638,39 @@ export class OrdersController {
                       repliedAt: order.review.repliedAt?.toISOString() ?? null,
                       createdAt: order.review.createdAt.toISOString()
                   }
+                : null,
+            dispute: order.dispute
+                ? {
+                      status: order.dispute.status,
+                      filedByRole: order.dispute.filedByRole,
+                      reasonCode: order.dispute.reasonCode,
+                      filerStatement: order.dispute.filerStatement,
+                      filerEvidence: order.dispute.filerEvidence.map((e) => ({
+                          id: e.id,
+                          side: e.side,
+                          name: e.name,
+                          size: e.size,
+                          mime: e.mime,
+                          createdAt: e.createdAt.toISOString()
+                      })),
+                      responderStatement: order.dispute.responderStatement,
+                      responderEvidence: order.dispute.responderEvidence.map((e) => ({
+                          id: e.id,
+                          side: e.side,
+                          name: e.name,
+                          size: e.size,
+                          mime: e.mime,
+                          createdAt: e.createdAt.toISOString()
+                      })),
+                      filedAt: order.dispute.filedAt.toISOString(),
+                      respondedAt: order.dispute.respondedAt?.toISOString() ?? null,
+                      responseDeadline: order.dispute.responseDeadline.toISOString(),
+                      verdict: order.dispute.verdict,
+                      buyerRefundPercent: order.dispute.buyerRefundPercent,
+                      adminNotes: order.dispute.adminNotes,
+                      resolvedAt: order.dispute.resolvedAt?.toISOString() ?? null,
+                      payout: order.dispute.payout
+                  }
                 : null
         })
     }

@@ -78,13 +78,16 @@ export class PrismaCategoryRepository implements CategoryRepositoryPort {
             this.prisma.category.count()
         ])
 
-        // gigCount + orders30d are 0 in Feature 03 (no Gig/Order tables yet).
-        // Feature 04+ will compute via Promise.all of count queries.
-        const items: CategoryListItem[] = rows.map((row) => ({
-            category: CategoryMapper.toDomain(row),
-            gigCount: 0,
-            orders30d: 0
-        }))
+        const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        const items: CategoryListItem[] = await Promise.all(
+            rows.map(async (row) => {
+                const [gigCount, orders30d] = await Promise.all([
+                    this.prisma.gig.count({ where: { categoryId: row.id, deletedAt: null } }),
+                    this.prisma.order.count({ where: { gig: { categoryId: row.id }, placedAt: { gte: since30d } } })
+                ])
+                return { category: CategoryMapper.toDomain(row), gigCount, orders30d }
+            })
+        )
 
         return { items, total }
     }
@@ -94,16 +97,17 @@ export class PrismaCategoryRepository implements CategoryRepositoryPort {
         return rows.map((row) => CategoryMapper.toDomain(row))
     }
 
-    async countGigsForCategory(_categoryId: string): Promise<number> {
-        // Feature 03 stub. Feature 04 will replace with:
-        //   return this.prisma.gig.count({ where: { categoryId: _categoryId, deletedAt: null } })
-        return 0
+    async countGigsForCategory(categoryId: string): Promise<number> {
+        return this.prisma.gig.count({ where: { categoryId, deletedAt: null } })
     }
 
-    async bulkReassignGigs(_fromCategoryId: string, _toCategoryId: string): Promise<void> {
-        // Feature 03 stub. Feature 04 will replace with:
-        //   await this.prisma.gig.updateMany({ where: { categoryId: _fromCategoryId }, data: { categoryId: _toCategoryId } })
-        return
+    async bulkReassignGigs(fromCategoryId: string, toCategoryId: string): Promise<void> {
+        // Move every gig (incl. soft-deleted) so the category's hard delete can't
+        // trip the required-relation foreign key.
+        await this.prisma.gig.updateMany({
+            where: { categoryId: fromCategoryId },
+            data: { categoryId: toCategoryId }
+        })
     }
 
     async findAllWithGigCount(): Promise<Array<CategoryEntity & { activeGigCount: number }>> {

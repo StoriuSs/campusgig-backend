@@ -22,6 +22,9 @@ export interface ConversationListItem {
     unreadCount: number
     online: boolean
     lastSeenAt: Date | null
+    // F12 — chat is frozen (read-only) while an active dispute (Frozen order)
+    // exists between the two participants. Reopens once the dispute resolves.
+    frozen: boolean
 }
 
 export interface AttachmentItem {
@@ -66,6 +69,11 @@ export interface MessagingRepositoryPort {
 
     // Returns null when thread doesn't exist OR viewer isn't a participant.
     getThreadById(threadId: string, viewerId: string): Promise<{ id: string; otherUserId: string } | null>
+
+    // F12 — of the given counterparts, which ones currently share a Frozen
+    // (actively disputed) order with the viewer. Used to lock the chat thread
+    // in both the inbox and the order workspace until the dispute resolves.
+    frozenCounterpartIds(viewerId: string, counterpartIds: string[]): Promise<string[]>
 
     listConversations(
         viewerId: string,
