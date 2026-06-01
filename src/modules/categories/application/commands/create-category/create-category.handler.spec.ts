@@ -9,16 +9,19 @@ import {
     DuplicateCategoryNameException,
     InvalidCategoryIconException
 } from '@/modules/categories/domain'
+import { ADMIN_ACTIVITY_REPOSITORY_PORT } from '@/modules/admin-activity'
 
 describe('CreateCategoryHandler', () => {
     let handler: CreateCategoryHandler
     let mockRepo: { findByNameInsensitive: jest.Mock; create: jest.Mock }
+    let mockActivity: { log: jest.Mock }
 
     beforeEach(async () => {
         mockRepo = {
             findByNameInsensitive: jest.fn(),
             create: jest.fn()
         }
+        mockActivity = { log: jest.fn() }
 
         const mockEventBus = { publish: jest.fn() }
 
@@ -26,6 +29,7 @@ describe('CreateCategoryHandler', () => {
             providers: [
                 CreateCategoryHandler,
                 { provide: CATEGORY_REPOSITORY_PORT, useValue: mockRepo },
+                { provide: ADMIN_ACTIVITY_REPOSITORY_PORT, useValue: mockActivity },
                 { provide: EventBus, useValue: mockEventBus }
             ]
         }).compile()
@@ -57,6 +61,9 @@ describe('CreateCategoryHandler', () => {
             createdById: 'admin-1'
         })
         expect(result).toBe(created)
+        expect(mockActivity.log).toHaveBeenCalledWith(
+            expect.objectContaining({ actionType: 'category_created', targetType: 'category', targetId: 'cat-1' })
+        )
     })
 
     it('rejects empty / whitespace-only names', async () => {

@@ -6,6 +6,7 @@ import {
     WalletRepositoryPort,
     WithdrawalRequestItem
 } from '../../../domain/ports/wallet.repository.port'
+import { ADMIN_ACTIVITY_REPOSITORY_PORT, AdminActivityRepositoryPort } from '@/modules/admin-activity'
 import { WithdrawalApprovedEvent } from '../../../domain/events'
 import { ApproveWithdrawalCommand } from './approve-withdrawal.command'
 
@@ -13,6 +14,7 @@ import { ApproveWithdrawalCommand } from './approve-withdrawal.command'
 export class ApproveWithdrawalHandler implements ICommandHandler<ApproveWithdrawalCommand> {
     constructor(
         @Inject(WALLET_REPOSITORY_PORT) private readonly walletRepo: WalletRepositoryPort,
+        @Inject(ADMIN_ACTIVITY_REPOSITORY_PORT) private readonly activityRepo: AdminActivityRepositoryPort,
         private readonly eventBus: EventBus
     ) {}
 
@@ -26,6 +28,15 @@ export class ApproveWithdrawalHandler implements ICommandHandler<ApproveWithdraw
         }
 
         const updated = await this.walletRepo.approveWithdrawal(command.withdrawalId, command.adminId)
+        const who = updated.user.displayName ?? updated.user.username ?? 'a user'
+        await this.activityRepo.log({
+            adminUserId: command.adminId,
+            actionType: 'withdrawal_processed',
+            targetType: 'withdrawal',
+            targetId: updated.id,
+            summary: `${updated.amountVnd.toLocaleString('vi-VN')}₫ to ${who} · Processed`,
+            metadata: { amountVnd: updated.amountVnd, userId: updated.user.id }
+        })
         this.eventBus.publish(
             new WithdrawalApprovedEvent(updated.user.id, updated.id, command.adminId, updated.amountVnd)
         )

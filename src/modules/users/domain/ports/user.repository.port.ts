@@ -13,6 +13,73 @@ export interface UserWithRelations {
     activeGigCount: number
 }
 
+// ── Admin Users page (F14) ───────────────────────────────────────────────────
+
+export type AdminUserSort = 'newest' | 'oldest' | 'highestRating' | 'mostOrders' | 'mostDisputes'
+
+export interface AdminUserListFilters {
+    endorsedOnly: boolean
+    sort: AdminUserSort
+    search?: string
+    page: number
+    pageSize: number
+}
+
+// Per-row stats. avgRating = ratingSumHalfStars/2/reviewCount (null = "New").
+// disputesLost = verdicts against the seller (RefundBuyer); disputesTotal = all
+// disputes on this seller's orders.
+export interface AdminUserRow {
+    id: string
+    username: string | null
+    displayName: string | null
+    email: string | null
+    avatarKey: string | null
+    createdAt: Date
+    endorsedAt: Date | null
+    activeGigCount: number
+    completedOrderCount: number
+    reviewCount: number
+    avgRating: number | null
+    disputesLost: number
+    disputesTotal: number
+}
+
+export interface AdminUserListResult {
+    items: AdminUserRow[]
+    total: number // matches the current filter (pagination)
+    totalUsers: number // platform-wide header stat
+    endorsedUsers: number // platform-wide header stat
+}
+
+export interface AdminUserTopGig {
+    id: string
+    title: string
+    status: string
+    avgRating: number | null
+    reviewCount: number
+    orderCount: number
+}
+
+export interface AdminUserDetail {
+    id: string
+    username: string | null
+    displayName: string | null
+    email: string | null
+    avatarKey: string | null
+    createdAt: Date
+    endorsedAt: Date | null
+    endorsedBy: string | null
+    endorsedByEmail: string | null
+    adminNote: string | null
+    activeGigCount: number
+    completedOrderCount: number
+    reviewCount: number
+    avgRating: number | null
+    disputesLost: number
+    disputesTotal: number
+    topGigs: AdminUserTopGig[]
+}
+
 export interface UserRepositoryPort {
     findById(id: string): Promise<UserEntity | null>
     findByKeycloakId(keycloakId: string): Promise<UserEntity | null>
@@ -37,6 +104,7 @@ export interface UserRepositoryPort {
                 | 'languages'
                 | 'endorsedAt'
                 | 'endorsedBy'
+                | 'adminNote'
                 | 'deletedAt'
                 | 'deletedBy'
             >
@@ -57,6 +125,10 @@ export interface UserRepositoryPort {
     removeSkill(userId: string, skillId: string): Promise<void>
 
     countSkills(userId: string): Promise<number>
+
+    // ── Admin Users page (F14) ───────────────────────────────────────────────
+    listForAdmin(filters: AdminUserListFilters): Promise<AdminUserListResult>
+    getAdminDetail(id: string): Promise<AdminUserDetail | null>
 
     addPortfolioItem(data: {
         userId: string

@@ -26,6 +26,7 @@ export class UserMapper {
             languages: prismaUser.languages,
             endorsedAt: prismaUser.endorsedAt,
             endorsedBy: prismaUser.endorsedBy,
+            adminNote: prismaUser.adminNote,
             isAdmin: prismaUser.isAdmin,
             reviewCount: prismaUser.reviewCount,
             ratingSumHalfStars: prismaUser.ratingSumHalfStars,
@@ -54,6 +55,7 @@ export class UserMapper {
         if (entity.languages !== undefined) data.languages = entity.languages
         if (entity.endorsedAt !== undefined) data.endorsedAt = entity.endorsedAt
         if (entity.endorsedBy !== undefined) data.endorsedBy = entity.endorsedBy
+        if (entity.adminNote !== undefined) data.adminNote = entity.adminNote
         if (entity.isAdmin !== undefined) data.isAdmin = entity.isAdmin
         if (entity.deletedAt !== undefined) data.deletedAt = entity.deletedAt
         if (entity.deletedBy !== undefined) data.deletedBy = entity.deletedBy

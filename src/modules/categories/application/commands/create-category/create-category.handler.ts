@@ -9,6 +9,7 @@ import {
     InvalidCategoryIconException,
     isValidCategoryIcon
 } from '@/modules/categories/domain'
+import { ADMIN_ACTIVITY_REPOSITORY_PORT, AdminActivityRepositoryPort } from '@/modules/admin-activity'
 import { CategoryCreatedEvent } from '../../events/category-created.event'
 
 const MAX_NAME_LENGTH = 50
@@ -18,6 +19,7 @@ const MAX_DESCRIPTION_LENGTH = 200
 export class CreateCategoryHandler implements ICommandHandler<CreateCategoryCommand> {
     constructor(
         @Inject(CATEGORY_REPOSITORY_PORT) private readonly categoryRepo: CategoryRepositoryPort,
+        @Inject(ADMIN_ACTIVITY_REPOSITORY_PORT) private readonly activityRepo: AdminActivityRepositoryPort,
         private readonly eventBus: EventBus
     ) {}
 
@@ -49,6 +51,13 @@ export class CreateCategoryHandler implements ICommandHandler<CreateCategoryComm
             createdById: command.actorId
         })
 
+        await this.activityRepo.log({
+            adminUserId: command.actorId,
+            actionType: 'category_created',
+            targetType: 'category',
+            targetId: created.id,
+            summary: `"${created.name}"`
+        })
         this.eventBus.publish(new CategoryCreatedEvent(created.id))
         return created
     }

@@ -9,6 +9,7 @@ import {
     CategoryHasGigsException,
     InvalidReassignTargetException
 } from '@/modules/categories/domain'
+import { ADMIN_ACTIVITY_REPOSITORY_PORT } from '@/modules/admin-activity'
 
 describe('DeleteCategoryHandler', () => {
     let handler: DeleteCategoryHandler
@@ -17,7 +18,9 @@ describe('DeleteCategoryHandler', () => {
         countGigsForCategory: jest.Mock
         bulkReassignGigs: jest.Mock
         delete: jest.Mock
+        findFallbackCategoryId: jest.Mock
     }
+    let mockActivity: { log: jest.Mock }
 
     const target = new CategoryEntity({ id: 'cat-1', name: 'Tutoring', icon: 'BookOutlined' })
     const reassignTarget = new CategoryEntity({ id: 'cat-2', name: 'Design', icon: 'BgColorsOutlined' })
@@ -27,8 +30,10 @@ describe('DeleteCategoryHandler', () => {
             findById: jest.fn(),
             countGigsForCategory: jest.fn(),
             bulkReassignGigs: jest.fn(),
-            delete: jest.fn()
+            delete: jest.fn(),
+            findFallbackCategoryId: jest.fn()
         }
+        mockActivity = { log: jest.fn() }
 
         const mockEventBus = { publish: jest.fn() }
 
@@ -36,6 +41,7 @@ describe('DeleteCategoryHandler', () => {
             providers: [
                 DeleteCategoryHandler,
                 { provide: CATEGORY_REPOSITORY_PORT, useValue: mockRepo },
+                { provide: ADMIN_ACTIVITY_REPOSITORY_PORT, useValue: mockActivity },
                 { provide: EventBus, useValue: mockEventBus }
             ]
         }).compile()
@@ -60,6 +66,20 @@ describe('DeleteCategoryHandler', () => {
 
         expect(mockRepo.delete).toHaveBeenCalledWith('cat-1')
         expect(mockRepo.bulkReassignGigs).not.toHaveBeenCalled()
+        expect(mockActivity.log).toHaveBeenCalledWith(
+            expect.objectContaining({ actionType: 'category_deleted', targetType: 'category', targetId: 'cat-1' })
+        )
+    })
+
+    it('rehomes leftover soft-deleted gigs to a fallback before deleting (0 active gigs)', async () => {
+        mockRepo.findById.mockResolvedValue(target)
+        mockRepo.countGigsForCategory.mockResolvedValue(0)
+        mockRepo.findFallbackCategoryId.mockResolvedValue('cat-2')
+
+        await handler.execute(new DeleteCategoryCommand('cat-1', null, 'admin-1'))
+
+        expect(mockRepo.bulkReassignGigs).toHaveBeenCalledWith('cat-1', 'cat-2')
+        expect(mockRepo.delete).toHaveBeenCalledWith('cat-1')
     })
 
     it('ignores reassignTo when category has 0 gigs', async () => {

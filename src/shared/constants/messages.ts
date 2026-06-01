@@ -198,6 +198,24 @@ export const MESSAGES = {
         RESOLVED: 'Verdict submitted'
     },
 
+    // Admin dashboard + remaining pages (Feature 14)
+    ADMIN_ACTIVITY: {
+        LISTED: 'Activity log retrieved successfully'
+    },
+    ADMIN_USERS: {
+        LISTED: 'Users retrieved successfully',
+        FETCHED: 'User detail retrieved successfully',
+        ENDORSED: 'User endorsed',
+        REVOKED: 'Endorsement revoked',
+        NOTE_SAVED: 'Admin note saved'
+    },
+    ADMIN_DASHBOARD: {
+        FETCHED: 'Dashboard metrics retrieved successfully'
+    },
+    ADMIN_REPORTS: {
+        EXPORTS_LISTED: 'Recent exports retrieved successfully'
+    },
+
     // Health messages
     HEALTH: {
         CHECK_SUCCESS: 'Health check successful',

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { CqrsModule } from '@nestjs/cqrs'
 
 import { GigsModule } from '@/modules/gigs/gigs.module'
+import { AdminActivityModule } from '@/modules/admin-activity/admin-activity.module'
 import { WALLET_REPOSITORY_PORT } from './domain/ports/wallet.repository.port'
 import {
     ApproveWithdrawalHandler,
@@ -38,7 +39,7 @@ const QueryHandlers = [
 const EventHandlers = [InvalidateWalletCacheHandler]
 
 @Module({
-    imports: [CqrsModule, GigsModule],
+    imports: [CqrsModule, GigsModule, AdminActivityModule],
     controllers: [WalletController, AdminWithdrawalsController],
     providers: [
         { provide: WALLET_REPOSITORY_PORT, useClass: PrismaWalletRepository },

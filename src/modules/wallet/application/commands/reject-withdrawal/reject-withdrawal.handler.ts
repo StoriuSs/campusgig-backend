@@ -7,6 +7,7 @@ import {
     WithdrawalRejectionReason,
     WithdrawalRequestItem
 } from '../../../domain/ports/wallet.repository.port'
+import { ADMIN_ACTIVITY_REPOSITORY_PORT, AdminActivityRepositoryPort } from '@/modules/admin-activity'
 import { WithdrawalRejectedEvent } from '../../../domain/events'
 import { RejectWithdrawalCommand } from './reject-withdrawal.command'
 
@@ -23,6 +24,7 @@ const MAX_NOTE_LEN = 500
 export class RejectWithdrawalHandler implements ICommandHandler<RejectWithdrawalCommand> {
     constructor(
         @Inject(WALLET_REPOSITORY_PORT) private readonly walletRepo: WalletRepositoryPort,
+        @Inject(ADMIN_ACTIVITY_REPOSITORY_PORT) private readonly activityRepo: AdminActivityRepositoryPort,
         private readonly eventBus: EventBus
     ) {}
 
@@ -52,6 +54,15 @@ export class RejectWithdrawalHandler implements ICommandHandler<RejectWithdrawal
             command.reason,
             trimmed
         )
+        const who = updated.user.displayName ?? updated.user.username ?? 'a user'
+        await this.activityRepo.log({
+            adminUserId: command.adminId,
+            actionType: 'withdrawal_rejected',
+            targetType: 'withdrawal',
+            targetId: updated.id,
+            summary: `${updated.amountVnd.toLocaleString('vi-VN')}₫ to ${who} · Rejected`,
+            metadata: { amountVnd: updated.amountVnd, userId: updated.user.id, reason: command.reason }
+        })
         this.eventBus.publish(
             new WithdrawalRejectedEvent(
                 updated.user.id,

@@ -7,6 +7,7 @@ import { GigsModule } from '@/modules/gigs/gigs.module'
 import { MessagingModule } from '@/modules/messaging/messaging.module'
 import { OrdersModule } from '@/modules/orders/orders.module'
 import { WalletModule } from '@/modules/wallet/wallet.module'
+import { AdminActivityModule } from '@/modules/admin-activity/admin-activity.module'
 
 import {
     AddDisputeEvidenceHandler,
@@ -51,6 +52,7 @@ const EventHandlers = [DisputeFiledSocketHandler, DisputeResolvedSocketHandler, 
         WalletModule,
         OrdersModule,
         GigsModule,
+        AdminActivityModule,
         BullModule.registerQueue({ name: DISPUTES_QUEUE })
     ],
     controllers: [DisputesController, AdminDisputesController],

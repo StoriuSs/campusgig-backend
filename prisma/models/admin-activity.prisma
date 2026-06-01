@@ -1,0 +1,38 @@
+// F14 — persisted audit trail of admin actions. Written inside the action's own
+// transaction (gig approve/reject, dispute resolve, withdrawal approve/reject,
+// category CRUD, endorse/revoke). Powers the Activity Log page + Dashboard feed.
+model AdminActivityLog {
+  id          String  @id @default(uuid())
+  adminUserId String
+  // gig_approved | gig_rejected | dispute_resolved | withdrawal_processed |
+  // withdrawal_rejected | user_endorsed | endorsement_revoked |
+  // category_created | category_edited | category_deleted
+  actionType String
+  targetType String // gig | order | user | category | withdrawal
+  targetId   String? // id of the target entity
+  summary    String // pre-rendered detail line, e.g. "\"Calculus Tutoring\" by Sarah J."
+  metadata   Json? // verdict / reason / percent / amount / names
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  admin User @relation("AdminActivityActor", fields: [adminUserId], references: [id])
+
+  @@index([createdAt(sort: Desc)])
+  @@index([actionType])
+  @@index([adminUserId])
+}
+
+// F14 — Recent Exports history for the Reports page. Metadata only (no file blob).
+model ReportExport {
+  id          String @id @default(uuid())
+  adminUserId String
+  reportType  String // transactions | top_sellers
+  period      String // this_month | last_month | last_3_months | last_6_months | this_year | all_time | custom
+  filename    String
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  admin User @relation("ReportExporter", fields: [adminUserId], references: [id])
+
+  @@index([createdAt(sort: Desc)])
+}

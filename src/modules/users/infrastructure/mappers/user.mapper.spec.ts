@@ -20,6 +20,7 @@ describe('UserMapper', () => {
         languages: null,
         endorsedAt: null,
         endorsedBy: null,
+        adminNote: null,
         isAdmin: false,
         reviewCount: 0,
         ratingSumHalfStars: 0,

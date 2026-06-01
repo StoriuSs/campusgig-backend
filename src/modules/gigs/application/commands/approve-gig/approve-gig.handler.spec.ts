@@ -9,6 +9,7 @@ import {
     GigNotPendingException,
     GigStatus
 } from '@/modules/gigs/domain'
+import { ADMIN_ACTIVITY_REPOSITORY_PORT } from '@/modules/admin-activity'
 import { GigApprovedEvent } from '../../events/gig-approved.event'
 
 function makeGig(status: GigStatus, overrides: Partial<ConstructorParameters<typeof GigEntity>[0]> = {}): GigEntity {
@@ -29,15 +30,18 @@ describe('ApproveGigHandler', () => {
     let handler: ApproveGigHandler
     let mockRepo: { findById: jest.Mock; approve: jest.Mock }
     let mockEventBus: { publish: jest.Mock }
+    let mockActivity: { log: jest.Mock }
 
     beforeEach(async () => {
         mockRepo = { findById: jest.fn(), approve: jest.fn() }
         mockEventBus = { publish: jest.fn() }
+        mockActivity = { log: jest.fn() }
 
         const module: TestingModule = await Test.createTestingModule({
             providers: [
                 ApproveGigHandler,
                 { provide: GIG_REPOSITORY_PORT, useValue: mockRepo },
+                { provide: ADMIN_ACTIVITY_REPOSITORY_PORT, useValue: mockActivity },
                 { provide: EventBus, useValue: mockEventBus }
             ]
         }).compile()
@@ -55,6 +59,9 @@ describe('ApproveGigHandler', () => {
 
         expect(mockRepo.approve).toHaveBeenCalledWith('gig-1')
         expect(result.status).toBe('Active')
+        expect(mockActivity.log).toHaveBeenCalledWith(
+            expect.objectContaining({ actionType: 'gig_approved', targetType: 'gig', targetId: 'gig-1' })
+        )
         expect(mockEventBus.publish).toHaveBeenCalledWith(expect.any(GigApprovedEvent))
         expect(mockEventBus.publish).toHaveBeenCalledWith(
             expect.objectContaining({ gigId: 'gig-1', sellerId: 'seller-1' })

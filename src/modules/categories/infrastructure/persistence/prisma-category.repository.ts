@@ -110,6 +110,15 @@ export class PrismaCategoryRepository implements CategoryRepositoryPort {
         })
     }
 
+    async findFallbackCategoryId(excludeId: string): Promise<string | null> {
+        const row = await this.prisma.category.findFirst({
+            where: { id: { not: excludeId } },
+            orderBy: { name: 'asc' },
+            select: { id: true }
+        })
+        return row?.id ?? null
+    }
+
     async findAllWithGigCount(): Promise<Array<CategoryEntity & { activeGigCount: number }>> {
         const rows = await this.prisma.category.findMany({
             orderBy: { name: 'asc' },

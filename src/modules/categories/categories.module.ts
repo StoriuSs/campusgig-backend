@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common'
 import { CqrsModule } from '@nestjs/cqrs'
 
+import { AdminActivityModule } from '@/modules/admin-activity/admin-activity.module'
 import { CATEGORY_REPOSITORY_PORT } from './domain'
 import {
     CreateCategoryHandler,
@@ -19,7 +20,7 @@ const QueryHandlers = [ListCategoriesHandler, ListAllCategoriesHandler, ListAllC
 const EventHandlers = [InvalidatePublicCategoriesCacheHandler]
 
 @Module({
-    imports: [CqrsModule],
+    imports: [CqrsModule, AdminActivityModule],
     controllers: [CategoriesController, PublicCategoriesController],
     providers: [
         { provide: CATEGORY_REPOSITORY_PORT, useClass: PrismaCategoryRepository },

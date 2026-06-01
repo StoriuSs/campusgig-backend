@@ -8,12 +8,14 @@ import {
     GigNotFoundException,
     GigNotPendingException
 } from '@/modules/gigs/domain'
+import { ADMIN_ACTIVITY_REPOSITORY_PORT, AdminActivityRepositoryPort } from '@/modules/admin-activity'
 import { GigApprovedEvent } from '../../events/gig-approved.event'
 
 @CommandHandler(ApproveGigCommand)
 export class ApproveGigHandler implements ICommandHandler<ApproveGigCommand> {
     constructor(
         @Inject(GIG_REPOSITORY_PORT) private readonly gigRepo: GigRepositoryPort,
+        @Inject(ADMIN_ACTIVITY_REPOSITORY_PORT) private readonly activityRepo: AdminActivityRepositoryPort,
         private readonly eventBus: EventBus
     ) {}
 
@@ -27,6 +29,14 @@ export class ApproveGigHandler implements ICommandHandler<ApproveGigCommand> {
         }
 
         const approved = await this.gigRepo.approve(command.gigId)
+        await this.activityRepo.log({
+            adminUserId: command.adminId,
+            actionType: 'gig_approved',
+            targetType: 'gig',
+            targetId: approved.id,
+            summary: `"${approved.title}"`,
+            metadata: { sellerId: approved.sellerId }
+        })
         this.eventBus.publish(new GigApprovedEvent(approved.id, approved.sellerId))
         return approved
     }
