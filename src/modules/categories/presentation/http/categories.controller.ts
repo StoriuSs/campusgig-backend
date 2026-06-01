@@ -49,7 +49,8 @@ export class CategoriesController {
     @HttpCode(HttpStatus.OK)
     @ApiOperation({
         summary: 'List categories (paginated)',
-        description: 'Returns categories sorted by name ascending. gigCount and orders30d are 0 in Feature 03.'
+        description:
+            'Returns categories sorted by name ascending, each with its non-deleted gigCount and last-30-day order count.'
     })
     @ApiQuery({ name: 'page', required: false, example: 1 })
     @ApiQuery({ name: 'pageSize', required: false, example: 20 })

@@ -53,6 +53,7 @@ model Order {
   extensions    Extension[]
   cancellations Cancellation[]
   review        Review?
+  dispute       Dispute?
 
   @@index([buyerId, status, placedAt(sort: Desc)])
   @@index([sellerId, status, placedAt(sort: Desc)])

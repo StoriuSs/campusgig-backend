@@ -30,6 +30,8 @@ export type OrderEventType =
     | 'AcceptDelivery'
     | 'AutoCompleted'
     | 'Finalized'
+    | 'DisputeFiled'
+    | 'DisputeResolved'
 
 export type ExtensionStatus = 'Pending' | 'Accepted' | 'Rejected' | 'Expired'
 export type CancellationStatus = 'Pending' | 'Accepted' | 'Rejected' | 'Expired'
@@ -156,6 +158,9 @@ export interface OrderDetail extends OrderItem {
     pendingCancellation: CancellationItem | null
     deliveryCount: number // for "Previous versions" toggle visibility
     review: OrderReviewInfo | null
+    // F12 — present when the order has a dispute (frozen/resolved workspace).
+    // Mapped from the Prisma relation here; disputes module is not imported.
+    dispute: import('@/modules/disputes/domain').OrderDisputeInfo | null
 }
 
 // Pre-flattened row for the Orders list page. `actionRequired` is computed in SQL.

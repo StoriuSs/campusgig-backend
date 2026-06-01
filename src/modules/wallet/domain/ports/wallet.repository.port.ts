@@ -176,4 +176,18 @@ export interface WalletRepositoryPort {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         tx?: any
     ): Promise<TransactionItem>
+
+    // F12 dispute "Split funds" verdict: the buyer's escrow (= the three shares
+    // summed) is split into a partial Refund (buyer), Earning (seller), and
+    // platform fee in one move. Shares are pre-computed by the caller; this does
+    // no math. A 0₫ share produces no Transaction row (its ref is omitted).
+    splitFromEscrow(
+        buyerId: string,
+        sellerId: string,
+        platformUserId: string,
+        shares: { buyerRefundVnd: number; sellerEarningVnd: number; platformFeeVnd: number },
+        orderId: string,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tx?: any
+    ): Promise<{ refund?: TransactionItem; earning?: TransactionItem; platformFee?: TransactionItem }>
 }

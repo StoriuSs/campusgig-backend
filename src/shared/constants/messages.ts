@@ -186,6 +186,18 @@ export const MESSAGES = {
         MANAGE_LISTED: 'Reviews retrieved'
     },
 
+    // Dispute messages (Feature 12)
+    DISPUTE: {
+        FILED: 'Dispute filed',
+        RESPONDED: 'Response submitted',
+        EVIDENCE_ADDED: 'Evidence added',
+        EVIDENCE_UPLOADED: 'Evidence file uploaded',
+        EVIDENCE_URL: 'Evidence URL generated',
+        LISTED: 'Disputes retrieved',
+        FETCHED: 'Dispute retrieved',
+        RESOLVED: 'Verdict submitted'
+    },
+
     // Health messages
     HEALTH: {
         CHECK_SUCCESS: 'Health check successful',
