@@ -10,6 +10,7 @@ import {
     DuplicateCategoryNameException,
     InvalidCategoryIconException
 } from '@/modules/categories/domain'
+import { ADMIN_ACTIVITY_REPOSITORY_PORT } from '@/modules/admin-activity'
 
 describe('UpdateCategoryHandler', () => {
     let handler: UpdateCategoryHandler
@@ -18,6 +19,7 @@ describe('UpdateCategoryHandler', () => {
         findByNameInsensitive: jest.Mock
         update: jest.Mock
     }
+    let mockActivity: { log: jest.Mock }
 
     const existing = new CategoryEntity({
         id: 'cat-1',
@@ -32,6 +34,7 @@ describe('UpdateCategoryHandler', () => {
             findByNameInsensitive: jest.fn(),
             update: jest.fn()
         }
+        mockActivity = { log: jest.fn() }
 
         const mockEventBus = { publish: jest.fn() }
 
@@ -39,6 +42,7 @@ describe('UpdateCategoryHandler', () => {
             providers: [
                 UpdateCategoryHandler,
                 { provide: CATEGORY_REPOSITORY_PORT, useValue: mockRepo },
+                { provide: ADMIN_ACTIVITY_REPOSITORY_PORT, useValue: mockActivity },
                 { provide: EventBus, useValue: mockEventBus }
             ]
         }).compile()
@@ -64,6 +68,9 @@ describe('UpdateCategoryHandler', () => {
         await handler.execute(new UpdateCategoryCommand('cat-1', undefined, 'CodeOutlined', undefined, 'admin-1'))
 
         expect(mockRepo.update).toHaveBeenCalledWith('cat-1', { icon: 'CodeOutlined' })
+        expect(mockActivity.log).toHaveBeenCalledWith(
+            expect.objectContaining({ actionType: 'category_edited', targetType: 'category', targetId: 'cat-1' })
+        )
     })
 
     it('skips uniqueness check when the new name has the same lowercase form', async () => {

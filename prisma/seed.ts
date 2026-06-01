@@ -1,6 +1,6 @@
 import { Pool } from 'pg'
 import { PrismaPg } from '@prisma/adapter-pg'
-import { PrismaClient } from '../generated/prisma/client'
+import { PrismaClient, Prisma } from '../generated/prisma/client'
 import { faker } from '@faker-js/faker'
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL })
@@ -1623,6 +1623,229 @@ async function seedOneOrder(
     return { extensions, cancellations }
 }
 
+// ── F14: Admin user + activity backfill + report exports ────────────────────
+
+const SEED_ADMIN_KEYCLOAK_ID = 'seed-admin'
+
+// A real admin User so AdminActivityLog/ReportExport FKs resolve and the
+// Activity Log "Admin" filter has an entry. keycloakId starts with `seed-`, so
+// cleanupSeedData removes it like any other seed row.
+async function seedAdminUser(): Promise<string> {
+    console.log('  → creating seed admin user…')
+    const admin = await prisma.user.upsert({
+        where: { keycloakId: SEED_ADMIN_KEYCLOAK_ID },
+        create: {
+            keycloakId: SEED_ADMIN_KEYCLOAK_ID,
+            username: '__seed_admin__',
+            email: 'admin@campusgig.vn',
+            displayName: 'CampusGig Admin',
+            isAdmin: true,
+            hasSetUsername: true
+        },
+        update: { isAdmin: true, email: 'admin@campusgig.vn' }
+    })
+    console.log('  ✓ seed admin ready')
+    return admin.id
+}
+
+// Backfills AdminActivityLog from already-seeded rows (resolved disputes,
+// processed/rejected withdrawals, approved/rejected gigs, categories,
+// endorsements). The seed writes those rows directly (bypassing the handlers
+// that normally log), so without this the Activity Log + dashboard feed would
+// be empty on demo data.
+async function seedAdminActivity(adminId: string): Promise<void> {
+    console.log('  → backfilling admin activity log…')
+    const SEED = { keycloakId: { startsWith: 'seed-' } }
+    const fmtVnd = (n: number) => `${n.toLocaleString('vi-VN')}₫`
+    const orderCode = (n: number) => `CG-${String(n).padStart(4, '0')}`
+    const VERDICT_LABEL: Record<string, string> = {
+        RefundBuyer: 'Refund buyer',
+        CompleteForSeller: 'Complete for seller',
+        SplitFunds: 'Split funds'
+    }
+    const nameOf = (u: { displayName: string | null; username: string | null }) =>
+        u.displayName ?? u.username ?? 'a user'
+
+    // Gig has no `seller` relation (only sellerId), so resolve seller names via a
+    // map of the seed users.
+    const seedUsers = await prisma.user.findMany({
+        where: SEED,
+        select: { id: true, displayName: true, username: true }
+    })
+    const seedUserIds = seedUsers.map((u) => u.id)
+    const nameById = new Map(seedUsers.map((u) => [u.id, nameOf(u)]))
+
+    const rows: Prisma.AdminActivityLogCreateManyInput[] = []
+
+    const disputes = await prisma.dispute.findMany({
+        where: { status: 'Resolved', order: { seller: SEED } },
+        select: {
+            orderId: true,
+            verdict: true,
+            buyerRefundPercent: true,
+            resolvedAt: true,
+            order: { select: { number: true } }
+        },
+        take: 30
+    })
+    for (const d of disputes) {
+        rows.push({
+            adminUserId: adminId,
+            actionType: 'dispute_resolved',
+            targetType: 'order',
+            targetId: d.orderId,
+            summary: `${orderCode(d.order.number)} · ${VERDICT_LABEL[d.verdict ?? ''] ?? d.verdict ?? ''}`,
+            metadata: { verdict: d.verdict, buyerRefundPercent: d.buyerRefundPercent },
+            createdAt: d.resolvedAt ?? new Date()
+        })
+    }
+
+    const withdrawals = await prisma.withdrawalRequest.findMany({
+        where: { status: { in: ['Completed', 'Rejected'] }, user: SEED },
+        select: {
+            id: true,
+            amountVnd: true,
+            status: true,
+            rejectionReason: true,
+            processedAt: true,
+            user: { select: { displayName: true, username: true } }
+        },
+        orderBy: { processedAt: 'desc' },
+        take: 20
+    })
+    for (const w of withdrawals) {
+        const processed = w.status === 'Completed'
+        rows.push({
+            adminUserId: adminId,
+            actionType: processed ? 'withdrawal_processed' : 'withdrawal_rejected',
+            targetType: 'withdrawal',
+            targetId: w.id,
+            summary: `${fmtVnd(w.amountVnd)} to ${nameOf(w.user)} · ${processed ? 'Processed' : 'Rejected'}`,
+            metadata: processed ? { amountVnd: w.amountVnd } : { amountVnd: w.amountVnd, reason: w.rejectionReason },
+            createdAt: w.processedAt ?? new Date()
+        })
+    }
+
+    const approved = await prisma.gig.findMany({
+        where: { status: 'Active', deletedAt: null, sellerId: { in: seedUserIds } },
+        select: { id: true, title: true, sellerId: true, approvedAt: true },
+        orderBy: { approvedAt: 'desc' },
+        take: 20
+    })
+    for (const g of approved) {
+        rows.push({
+            adminUserId: adminId,
+            actionType: 'gig_approved',
+            targetType: 'gig',
+            targetId: g.id,
+            summary: `"${g.title}" by ${nameById.get(g.sellerId) ?? 'a user'}`,
+            metadata: { sellerId: g.sellerId },
+            createdAt: g.approvedAt ?? new Date()
+        })
+    }
+
+    const rejected = await prisma.gig.findMany({
+        where: { status: 'Rejected', sellerId: { in: seedUserIds } },
+        select: {
+            id: true,
+            title: true,
+            sellerId: true,
+            rejectionCategory: true,
+            rejectionReason: true,
+            updatedAt: true
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 10
+    })
+    for (const g of rejected) {
+        rows.push({
+            adminUserId: adminId,
+            actionType: 'gig_rejected',
+            targetType: 'gig',
+            targetId: g.id,
+            summary: `"${g.title}" by ${nameById.get(g.sellerId) ?? 'a user'}`,
+            metadata: { sellerId: g.sellerId, category: g.rejectionCategory, reason: g.rejectionReason },
+            createdAt: g.updatedAt
+        })
+    }
+
+    const categories = await prisma.category.findMany({ select: { id: true, name: true, createdAt: true } })
+    for (const c of categories) {
+        rows.push({
+            adminUserId: adminId,
+            actionType: 'category_created',
+            targetType: 'category',
+            targetId: c.id,
+            summary: `"${c.name}"`,
+            createdAt: c.createdAt
+        })
+    }
+
+    const endorsed = await prisma.user.findMany({
+        where: { ...SEED, endorsedAt: { not: null } },
+        select: { id: true, displayName: true, username: true, endorsedAt: true },
+        orderBy: { endorsedAt: 'desc' },
+        take: 15
+    })
+    for (const u of endorsed) {
+        rows.push({
+            adminUserId: adminId,
+            actionType: 'user_endorsed',
+            targetType: 'user',
+            targetId: u.id,
+            summary: nameOf(u),
+            createdAt: u.endorsedAt ?? new Date()
+        })
+    }
+
+    if (rows.length > 0) {
+        await prisma.adminActivityLog.createMany({ data: rows })
+    }
+    console.log(`  ✓ ${rows.length} activity log entries backfilled`)
+}
+
+// A few sample admin notes + Recent Exports rows so the Users detail modal and
+// the Reports page aren't empty on demo data.
+async function seedAdminExtras(adminId: string): Promise<void> {
+    console.log('  → seeding admin notes + report exports…')
+
+    const noted = await prisma.user.findMany({
+        where: { keycloakId: { startsWith: 'seed-' }, endorsedAt: { not: null } },
+        select: { id: true },
+        take: 3
+    })
+    const NOTES = [
+        'Top performer. Endorsed based on consistent 4.8+ rating across many orders with zero disputes.',
+        'Contacted about late deliveries on 2 orders. User was responsive and resolved both.',
+        'Long-standing seller with strong reviews — flagged as a candidate for the featured program.'
+    ]
+    for (let i = 0; i < noted.length; i++) {
+        await prisma.user.update({ where: { id: noted[i].id }, data: { adminNote: NOTES[i] } })
+    }
+
+    const DAY = 24 * 3600_000
+    const now = Date.now()
+    const unix = (ms: number) => Math.floor(ms / 1000)
+    const exports = [
+        { reportType: 'transactions', period: 'this_month', ageDays: 2 },
+        { reportType: 'top_sellers', period: 'last_month', ageDays: 18 },
+        { reportType: 'transactions', period: 'last_3_months', ageDays: 33 }
+    ]
+    await prisma.reportExport.createMany({
+        data: exports.map((e) => {
+            const at = now - e.ageDays * DAY
+            return {
+                adminUserId: adminId,
+                reportType: e.reportType,
+                period: e.period,
+                filename: `campusgig-${e.reportType.replace(/_/g, '-')}-${unix(at)}.xlsx`,
+                createdAt: new Date(at)
+            }
+        })
+    })
+    console.log(`  ✓ ${noted.length} admin notes + 3 report exports`)
+}
+
 // ── Cleanup (SEED_FORCE) ───────────────────────────────────────────────────
 
 async function cleanupSeedData(): Promise<void> {
@@ -1683,6 +1906,11 @@ async function cleanupSeedData(): Promise<void> {
         await prisma.order.deleteMany({ where: { id: { in: orderIds } } })
     }
 
+    // F14 — audit log + report exports reference the seed admin (FK is Restrict),
+    // so clear them before deleting users.
+    await prisma.adminActivityLog.deleteMany({ where: { adminUserId: { in: seedUserIds } } })
+    await prisma.reportExport.deleteMany({ where: { adminUserId: { in: seedUserIds } } })
+
     await prisma.gig.deleteMany({ where: { sellerId: { in: seedUserIds } } })
     await prisma.user.deleteMany({ where: { id: { in: seedUserIds } } })
     console.log(`  ✓ removed ${seedUserIds.length} seed users and ${orderIds.length} orders + dependents`)
@@ -1735,7 +1963,14 @@ async function main(): Promise<void> {
     }
 
     const categoryIds = await seedCategories()
+    const adminId = await seedAdminUser()
     const users = await seedUsers()
+    // Attribute the seed users' endorsements to the real seed admin so the
+    // Users detail modal can resolve "Endorsed by {admin email}".
+    await prisma.user.updateMany({
+        where: { keycloakId: { startsWith: 'seed-' }, endorsedAt: { not: null } },
+        data: { endorsedBy: adminId }
+    })
     const gigs = await seedGigs(users, categoryIds)
     await seedSavedGigs(users, gigs)
     await seedWalletExtras(users)
@@ -1743,6 +1978,8 @@ async function main(): Promise<void> {
     await seedOrders(users)
     await seedGigViews(gigs)
     await seedDisputes(users)
+    await seedAdminActivity(adminId)
+    await seedAdminExtras(adminId)
 
     const elapsed = ((Date.now() - start) / 1000).toFixed(1)
     console.log(`✅ Seed complete in ${elapsed}s`)

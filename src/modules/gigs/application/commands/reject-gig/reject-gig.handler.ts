@@ -9,6 +9,7 @@ import {
     GigNotPendingException,
     isRejectionCategory
 } from '@/modules/gigs/domain'
+import { ADMIN_ACTIVITY_REPOSITORY_PORT, AdminActivityRepositoryPort } from '@/modules/admin-activity'
 import { GigRejectedEvent } from '../../events/gig-rejected.event'
 
 const REASON_MIN = 20
@@ -18,6 +19,7 @@ const REASON_MAX = 1000
 export class RejectGigHandler implements ICommandHandler<RejectGigCommand> {
     constructor(
         @Inject(GIG_REPOSITORY_PORT) private readonly gigRepo: GigRepositoryPort,
+        @Inject(ADMIN_ACTIVITY_REPOSITORY_PORT) private readonly activityRepo: AdminActivityRepositoryPort,
         private readonly eventBus: EventBus
     ) {}
 
@@ -41,6 +43,14 @@ export class RejectGigHandler implements ICommandHandler<RejectGigCommand> {
         }
 
         const rejected = await this.gigRepo.reject(command.gigId, command.rejectionCategory, reason)
+        await this.activityRepo.log({
+            adminUserId: command.adminId,
+            actionType: 'gig_rejected',
+            targetType: 'gig',
+            targetId: rejected.id,
+            summary: `"${rejected.title}"`,
+            metadata: { sellerId: rejected.sellerId, category: command.rejectionCategory, reason }
+        })
         this.eventBus.publish(new GigRejectedEvent(rejected.id, rejected.sellerId, command.rejectionCategory, reason))
         return rejected
     }

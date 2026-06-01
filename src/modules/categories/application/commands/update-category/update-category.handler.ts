@@ -10,6 +10,7 @@ import {
     InvalidCategoryIconException,
     isValidCategoryIcon
 } from '@/modules/categories/domain'
+import { ADMIN_ACTIVITY_REPOSITORY_PORT, AdminActivityRepositoryPort } from '@/modules/admin-activity'
 import { CategoryUpdatedEvent } from '../../events/category-updated.event'
 
 const MAX_NAME_LENGTH = 50
@@ -19,6 +20,7 @@ const MAX_DESCRIPTION_LENGTH = 200
 export class UpdateCategoryHandler implements ICommandHandler<UpdateCategoryCommand> {
     constructor(
         @Inject(CATEGORY_REPOSITORY_PORT) private readonly categoryRepo: CategoryRepositoryPort,
+        @Inject(ADMIN_ACTIVITY_REPOSITORY_PORT) private readonly activityRepo: AdminActivityRepositoryPort,
         private readonly eventBus: EventBus
     ) {}
 
@@ -69,6 +71,13 @@ export class UpdateCategoryHandler implements ICommandHandler<UpdateCategoryComm
         }
 
         const updated = await this.categoryRepo.update(command.id, patch)
+        await this.activityRepo.log({
+            adminUserId: command.actorId,
+            actionType: 'category_edited',
+            targetType: 'category',
+            targetId: updated.id,
+            summary: `"${updated.name}"`
+        })
         this.eventBus.publish(new CategoryUpdatedEvent(updated.id))
         return updated
     }

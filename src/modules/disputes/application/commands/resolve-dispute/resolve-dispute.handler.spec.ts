@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing'
 import { EventBus } from '@nestjs/cqrs'
 
 import { ORDERS_REPOSITORY_PORT } from '@/modules/orders/domain/ports'
+import { ADMIN_ACTIVITY_REPOSITORY_PORT } from '@/modules/admin-activity'
 
 import { DISPUTES_REPOSITORY_PORT } from '../../../domain/ports/disputes.repository.port'
 import { DisputeResolvedEvent } from '../../../domain/events'
@@ -16,17 +17,20 @@ describe('ResolveDisputeHandler', () => {
     let repo: { resolve: jest.Mock }
     let ordersRepo: { findByIdForViewer: jest.Mock }
     let eventBus: { publish: jest.Mock }
+    let activity: { log: jest.Mock }
 
     beforeEach(async () => {
         repo = { resolve: jest.fn().mockResolvedValue({ orderId: 'o1', dispute, refs }) }
-        ordersRepo = { findByIdForViewer: jest.fn().mockResolvedValue({ id: 'o1' }) }
+        ordersRepo = { findByIdForViewer: jest.fn().mockResolvedValue({ id: 'o1', number: 1042 }) }
         eventBus = { publish: jest.fn() }
+        activity = { log: jest.fn() }
 
         const module: TestingModule = await Test.createTestingModule({
             providers: [
                 ResolveDisputeHandler,
                 { provide: DISPUTES_REPOSITORY_PORT, useValue: repo },
                 { provide: ORDERS_REPOSITORY_PORT, useValue: ordersRepo },
+                { provide: ADMIN_ACTIVITY_REPOSITORY_PORT, useValue: activity },
                 { provide: EventBus, useValue: eventBus }
             ]
         }).compile()
@@ -46,6 +50,9 @@ describe('ResolveDisputeHandler', () => {
         })
         // Admin isn't a participant — OrderDetail is read as the filer.
         expect(ordersRepo.findByIdForViewer).toHaveBeenCalledWith('o1', 'u-buyer')
+        expect(activity.log).toHaveBeenCalledWith(
+            expect.objectContaining({ actionType: 'dispute_resolved', targetType: 'order', targetId: 'o1' })
+        )
         expect(eventBus.publish).toHaveBeenCalledTimes(1)
         expect(eventBus.publish.mock.calls[0][0]).toBeInstanceOf(DisputeResolvedEvent)
     })

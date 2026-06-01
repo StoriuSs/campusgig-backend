@@ -22,9 +22,11 @@ export class UserEntity {
     languages: string | null
 
     // Endorsed-badge fields. endorsedAt !== null means "user is endorsed."
-    // We never store an explicit "not endorsed" state per CLAUDE.md.
     endorsedAt: Date | null
     endorsedBy: string | null
+
+    // Free-text admin note (F14, admin-only).
+    adminNote: string | null
 
     // Admin role flag — set by JIT provisioner from JWT `realm_access.roles`.
     // Buyer/seller queries filter `WHERE isAdmin = false` to keep admins out.
@@ -53,6 +55,7 @@ export class UserEntity {
         languages?: string | null
         endorsedAt?: Date | null
         endorsedBy?: string | null
+        adminNote?: string | null
         isAdmin?: boolean
         reviewCount?: number
         ratingSumHalfStars?: number
@@ -74,6 +77,7 @@ export class UserEntity {
         this.languages = props.languages ?? null
         this.endorsedAt = props.endorsedAt ?? null
         this.endorsedBy = props.endorsedBy ?? null
+        this.adminNote = props.adminNote ?? null
         this.isAdmin = props.isAdmin ?? false
         this.reviewCount = props.reviewCount ?? 0
         this.ratingSumHalfStars = props.ratingSumHalfStars ?? 0

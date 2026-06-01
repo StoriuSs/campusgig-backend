@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { CqrsModule } from '@nestjs/cqrs'
 import { BullModule } from '@nestjs/bullmq'
 import { UploadModule } from '@/shared/infrastructure'
+import { AdminActivityModule } from '@/modules/admin-activity/admin-activity.module'
 
 // Domain
 import { USER_REPOSITORY_PORT } from './domain'
@@ -20,6 +21,11 @@ import {
     RemovePortfolioItemHandler,
     CheckUsernameHandler,
     GetPublicProfileByUsernameHandler,
+    ListAdminUsersHandler,
+    GetAdminUserDetailHandler,
+    EndorseUserHandler,
+    RevokeEndorsementHandler,
+    SaveAdminNoteHandler,
     InvalidateCacheHandler,
     CleanupOldAvatarHandler,
     CleanupPortfolioImageHandler,
@@ -30,7 +36,7 @@ import {
 import { PrismaUserRepository, RedisCacheAdapter, UploadStorageAdapter } from './infrastructure'
 
 // Presentation (Inbound Adapters)
-import { UsersController, FileCleanupConsumer, KeycloakDeleteConsumer } from './presentation'
+import { UsersController, AdminUsersController, FileCleanupConsumer, KeycloakDeleteConsumer } from './presentation'
 
 // Command Handlers array
 const CommandHandlers = [
@@ -41,11 +47,19 @@ const CommandHandlers = [
     AddSkillHandler,
     RemoveSkillHandler,
     AddPortfolioItemHandler,
-    RemovePortfolioItemHandler
+    RemovePortfolioItemHandler,
+    EndorseUserHandler,
+    RevokeEndorsementHandler,
+    SaveAdminNoteHandler
 ]
 
 // Query Handlers array
-const QueryHandlers = [CheckUsernameHandler, GetPublicProfileByUsernameHandler]
+const QueryHandlers = [
+    CheckUsernameHandler,
+    GetPublicProfileByUsernameHandler,
+    ListAdminUsersHandler,
+    GetAdminUserDetailHandler
+]
 
 // Event Handlers array
 const EventHandlers = [
@@ -56,8 +70,13 @@ const EventHandlers = [
 ]
 
 @Module({
-    imports: [CqrsModule, UploadModule, BullModule.registerQueue({ name: 'keycloak-sync' }, { name: 'file-cleanup' })],
-    controllers: [UsersController],
+    imports: [
+        CqrsModule,
+        UploadModule,
+        AdminActivityModule,
+        BullModule.registerQueue({ name: 'keycloak-sync' }, { name: 'file-cleanup' })
+    ],
+    controllers: [UsersController, AdminUsersController],
     providers: [
         // Port → Adapter bindings (Hexagonal Architecture wiring)
         { provide: USER_REPOSITORY_PORT, useClass: PrismaUserRepository },

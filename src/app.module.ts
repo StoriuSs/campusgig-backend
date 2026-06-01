@@ -54,6 +54,9 @@ import { MessagingModule } from '@/modules/messaging/messaging.module'
 import { OrdersModule } from '@/modules/orders/orders.module'
 import { ReviewsModule } from '@/modules/reviews/reviews.module'
 import { DisputesModule } from '@/modules/disputes/disputes.module'
+import { AdminActivityModule } from '@/modules/admin-activity/admin-activity.module'
+import { AdminMetricsModule } from '@/modules/admin-metrics/admin-metrics.module'
+import { AdminReportsModule } from '@/modules/admin-reports/admin-reports.module'
 
 import { KeycloakAuthGuard } from '@/shared/infrastructure'
 import { RolesGuard } from '@/shared/infrastructure'
@@ -156,7 +159,10 @@ import { RolesGuard } from '@/shared/infrastructure'
         MessagingModule,
         OrdersModule,
         ReviewsModule,
-        DisputesModule
+        DisputesModule,
+        AdminActivityModule,
+        AdminMetricsModule,
+        AdminReportsModule
     ],
     providers: [
         {

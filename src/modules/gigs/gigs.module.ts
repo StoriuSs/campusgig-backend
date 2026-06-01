@@ -27,6 +27,7 @@ import { GigsController, AdminGigsController } from './presentation'
 // Re-export the categories repository binding via the CategoriesModule import? No —
 // CategoriesModule provides CATEGORY_REPOSITORY_PORT, and we just import the module.
 import { CategoriesModule } from '@/modules/categories/categories.module'
+import { AdminActivityModule } from '@/modules/admin-activity/admin-activity.module'
 
 const CommandHandlers = [
     CreateGigHandler,
@@ -49,7 +50,7 @@ const QueryHandlers = [
 ]
 
 @Module({
-    imports: [CqrsModule, UploadModule, CategoriesModule],
+    imports: [CqrsModule, UploadModule, CategoriesModule, AdminActivityModule],
     controllers: [GigsController, AdminGigsController],
     providers: [
         { provide: GIG_REPOSITORY_PORT, useClass: PrismaGigRepository },

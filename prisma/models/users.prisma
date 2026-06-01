@@ -15,9 +15,12 @@ model User {
   roleLine  String?
   languages String?
 
-  // Endorsed-badge fields — column pre-added; admin-grant UI ships in F13.
+  // Endorsed-badge fields — admin grant/revoke wired in F14.
   endorsedAt DateTime? @db.Timestamptz(6)
   endorsedBy String? // Admin user ID; FK enforcement deferred until admin role exists.
+
+  // F14 — free-text admin note kept on the user (Admin / User Detail modal).
+  adminNote String?
 
   // Set by JIT provisioner on JWT `admin` realm role. Filter buyer/seller queries with isAdmin=false.
   isAdmin Boolean @default(false)
@@ -66,6 +69,8 @@ model User {
   buyerReviews   Review[] @relation("BuyerReviews")
   filedDisputes    Dispute[] @relation("DisputeFiler")
   resolvedDisputes Dispute[] @relation("DisputeResolver")
+  adminActivityLogs AdminActivityLog[] @relation("AdminActivityActor")
+  reportExports     ReportExport[]     @relation("ReportExporter")
 
   @@index([keycloakId])
   @@index([username])

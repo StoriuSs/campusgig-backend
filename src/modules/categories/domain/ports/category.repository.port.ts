@@ -56,4 +56,11 @@ export interface CategoryRepositoryPort {
      * Feature 03 (no Gig table). Feature 04 will implement.
      */
     bulkReassignGigs(fromCategoryId: string, toCategoryId: string): Promise<void>
+
+    /**
+     * Id of any other category (alphabetical), or null if none exists. Used to
+     * rehome soft-deleted gigs that still FK-reference a category being deleted
+     * (they're invisible but keep the required relation alive for order history).
+     */
+    findFallbackCategoryId(excludeId: string): Promise<string | null>
 }

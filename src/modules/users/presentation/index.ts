@@ -1,4 +1,5 @@
 export { UsersDomainExceptionFilter } from './filters/users-domain-exception.filter'
 export * from './http/users.controller'
+export * from './http/admin-users.controller'
 export * from './consumers/file-cleanup.consumer'
 export * from './consumers/keycloak-delete.consumer'
