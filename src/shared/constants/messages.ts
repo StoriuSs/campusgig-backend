@@ -225,6 +225,12 @@ export const MESSAGES = {
         ALL_MARKED_READ: 'All notifications marked as read'
     },
 
+    // User Dashboard (Feature 16)
+    DASHBOARD: {
+        SELLER: 'Seller dashboard retrieved successfully',
+        BUYER: 'Buyer dashboard retrieved successfully'
+    },
+
     // Health messages
     HEALTH: {
         CHECK_SUCCESS: 'Health check successful',

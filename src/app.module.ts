@@ -58,6 +58,7 @@ import { AdminActivityModule } from '@/modules/admin-activity/admin-activity.mod
 import { AdminMetricsModule } from '@/modules/admin-metrics/admin-metrics.module'
 import { AdminReportsModule } from '@/modules/admin-reports/admin-reports.module'
 import { NotificationsModule } from '@/modules/notifications/notifications.module'
+import { DashboardModule } from '@/modules/dashboard/dashboard.module'
 
 import { KeycloakAuthGuard } from '@/shared/infrastructure'
 import { RolesGuard } from '@/shared/infrastructure'
@@ -164,7 +165,8 @@ import { RolesGuard } from '@/shared/infrastructure'
         AdminActivityModule,
         AdminMetricsModule,
         AdminReportsModule,
-        NotificationsModule
+        NotificationsModule,
+        DashboardModule
     ],
     providers: [
         {
