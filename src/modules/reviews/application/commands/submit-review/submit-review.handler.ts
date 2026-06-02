@@ -38,7 +38,14 @@ export class SubmitReviewHandler implements ICommandHandler<SubmitReviewCommand>
         })
 
         this.eventBus.publish(
-            new ReviewSubmittedEvent(review.id, review.orderId, review.gigId, review.sellerId, review.buyerId)
+            new ReviewSubmittedEvent(
+                review.id,
+                review.orderId,
+                review.gigId,
+                review.sellerId,
+                review.buyerId,
+                review.ratingHalfStars
+            )
         )
         return review
     }

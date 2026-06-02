@@ -7,6 +7,7 @@ export class ReviewSubmittedEvent {
         public readonly orderId: string,
         public readonly gigId: string,
         public readonly sellerId: string,
-        public readonly buyerId: string
+        public readonly buyerId: string,
+        public readonly ratingHalfStars: number
     ) {}
 }

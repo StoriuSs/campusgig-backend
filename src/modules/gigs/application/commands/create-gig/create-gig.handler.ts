@@ -1,6 +1,7 @@
-import { CommandHandler, ICommandHandler } from '@nestjs/cqrs'
+import { CommandHandler, ICommandHandler, EventBus } from '@nestjs/cqrs'
 import { Inject, BadRequestException } from '@nestjs/common'
 import { CreateGigCommand } from './create-gig.command'
+import { GigSubmittedEvent } from '../../events/gig-submitted.event'
 import {
     GigRepositoryPort,
     GIG_REPOSITORY_PORT,
@@ -37,7 +38,8 @@ const FAQ_A_MAX = 500
 export class CreateGigHandler implements ICommandHandler<CreateGigCommand> {
     constructor(
         @Inject(GIG_REPOSITORY_PORT) private readonly gigRepo: GigRepositoryPort,
-        @Inject(CATEGORY_REPOSITORY_PORT) private readonly categoryRepo: CategoryRepositoryPort
+        @Inject(CATEGORY_REPOSITORY_PORT) private readonly categoryRepo: CategoryRepositoryPort,
+        private readonly eventBus: EventBus
     ) {}
 
     async execute(command: CreateGigCommand): Promise<GigEntity> {
@@ -116,7 +118,7 @@ export class CreateGigHandler implements ICommandHandler<CreateGigCommand> {
             }
         }
 
-        return this.gigRepo.create(
+        const gig = await this.gigRepo.create(
             {
                 sellerId: command.callerId,
                 categoryId: command.categoryId,
@@ -130,5 +132,7 @@ export class CreateGigHandler implements ICommandHandler<CreateGigCommand> {
             },
             'Pending'
         )
+        this.eventBus.publish(new GigSubmittedEvent(gig.id, gig.sellerId, gig.title))
+        return gig
     }
 }

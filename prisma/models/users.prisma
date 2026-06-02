@@ -71,6 +71,7 @@ model User {
   resolvedDisputes Dispute[] @relation("DisputeResolver")
   adminActivityLogs AdminActivityLog[] @relation("AdminActivityActor")
   reportExports     ReportExport[]     @relation("ReportExporter")
+  notifications     Notification[]     @relation("UserNotifications")
 
   @@index([keycloakId])
   @@index([username])

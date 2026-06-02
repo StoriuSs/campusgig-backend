@@ -9,6 +9,7 @@ export class GigRejectedEvent {
         public readonly gigId: string,
         public readonly sellerId: string,
         public readonly rejectionCategory: string,
-        public readonly rejectionReason: string
+        public readonly rejectionReason: string,
+        public readonly gigTitle: string
     ) {}
 }

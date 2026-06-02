@@ -51,7 +51,9 @@ export class RejectGigHandler implements ICommandHandler<RejectGigCommand> {
             summary: `"${rejected.title}"`,
             metadata: { sellerId: rejected.sellerId, category: command.rejectionCategory, reason }
         })
-        this.eventBus.publish(new GigRejectedEvent(rejected.id, rejected.sellerId, command.rejectionCategory, reason))
+        this.eventBus.publish(
+            new GigRejectedEvent(rejected.id, rejected.sellerId, command.rejectionCategory, reason, rejected.title)
+        )
         return rejected
     }
 }

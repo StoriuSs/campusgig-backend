@@ -1,4 +1,4 @@
-import { Exclude, Expose, Type } from 'class-transformer'
+import { Exclude, Expose, Transform, Type } from 'class-transformer'
 import { IsArray, IsInt, IsObject, IsOptional, IsString, Min, ValidateNested } from 'class-validator'
 
 @Exclude()
@@ -8,7 +8,8 @@ export class AdminActivityRowDto {
     @Expose() @IsString() targetType!: string
     @Expose() @IsOptional() @IsString() targetId!: string | null
     @Expose() @IsString() summary!: string
-    @Expose() @IsOptional() @IsObject() metadata!: Record<string, unknown> | null
+    // Passthrough — without @Transform the serializer empties this blob to {}.
+    @Expose() @Transform(({ obj }) => obj.metadata) @IsOptional() @IsObject() metadata!: Record<string, unknown> | null
     @Expose() @IsString() adminUserId!: string
     @Expose() @IsOptional() @IsString() adminEmail!: string | null
     @Expose() @IsString() createdAt!: string

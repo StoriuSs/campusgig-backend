@@ -216,6 +216,15 @@ export const MESSAGES = {
         EXPORTS_LISTED: 'Recent exports retrieved successfully'
     },
 
+    // Notifications (Feature 15)
+    NOTIFICATIONS: {
+        LISTED: 'Notifications retrieved successfully',
+        RECENT: 'Recent notifications retrieved successfully',
+        UNREAD_COUNT: 'Unread count retrieved successfully',
+        MARKED_READ: 'Notification marked as read',
+        ALL_MARKED_READ: 'All notifications marked as read'
+    },
+
     // Health messages
     HEALTH: {
         CHECK_SUCCESS: 'Health check successful',

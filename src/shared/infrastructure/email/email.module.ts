@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common'
+import { Logger, Module } from '@nestjs/common'
 import { MailerModule } from '@nestjs-modules/mailer'
 import { HandlebarsAdapter } from '@nestjs-modules/mailer/adapters/handlebars.adapter'
 import { ConfigModule, ConfigService } from '@nestjs/config'
@@ -14,19 +14,22 @@ import * as path from 'path'
                 // In dev mode, use src folder; in prod, use dist folder
                 const isDev = process.env.NODE_ENV !== 'production'
                 const templateDir = isDev
-                    ? path.join(process.cwd(), 'src', 'modules', 'core', 'email', 'templates')
+                    ? path.join(process.cwd(), 'src', 'shared', 'infrastructure', 'email', 'templates')
                     : path.join(__dirname, 'templates')
 
-                // Debug logging
                 const emailConfig = {
                     host: config.get<string>('email.host'),
                     port: config.get<number>('email.port'),
                     secure: config.get<boolean>('email.secure'),
-                    user: config.get<string>('email.auth.user'),
-                    password: config.get<string>('email.auth.password'),
-                    name: config.get<string>('email.from.name'),
-                    address: config.get<string>('email.from.address')
+                    user: config.get<string>('email.user'),
+                    password: config.get<string>('email.password'),
+                    name: config.get<string>('email.fromName'),
+                    address: config.get<string>('email.fromAddress')
                 }
+
+                new Logger('EmailModule').log(
+                    `SMTP transport → host=${emailConfig.host} port=${emailConfig.port} secure=${emailConfig.secure} user=${emailConfig.user} pass=${emailConfig.password ? 'set' : 'MISSING'} from="${emailConfig.name} <${emailConfig.address}>" templateDir=${templateDir}`
+                )
 
                 return {
                     transport: {

@@ -1,0 +1,17 @@
+// One row per recipient per event (admin events fan out to one row per admin).
+// `data` holds camelCase display primitives — client/email worker render text from
+// them, no pre-rendered copy is stored. `readAt` null = unread.
+model Notification {
+  id          String    @id @default(uuid())
+  recipientId String
+  type        String // NotificationType union (see notification.types.ts)
+  data        Json
+  readAt      DateTime? @db.Timestamptz(6)
+  emailSent   Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+
+  recipient User @relation("UserNotifications", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, createdAt(sort: Desc)])
+  @@index([recipientId, readAt])
+}
