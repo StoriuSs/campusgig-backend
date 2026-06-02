@@ -57,6 +57,7 @@ import { DisputesModule } from '@/modules/disputes/disputes.module'
 import { AdminActivityModule } from '@/modules/admin-activity/admin-activity.module'
 import { AdminMetricsModule } from '@/modules/admin-metrics/admin-metrics.module'
 import { AdminReportsModule } from '@/modules/admin-reports/admin-reports.module'
+import { NotificationsModule } from '@/modules/notifications/notifications.module'
 
 import { KeycloakAuthGuard } from '@/shared/infrastructure'
 import { RolesGuard } from '@/shared/infrastructure'
@@ -162,7 +163,8 @@ import { RolesGuard } from '@/shared/infrastructure'
         DisputesModule,
         AdminActivityModule,
         AdminMetricsModule,
-        AdminReportsModule
+        AdminReportsModule,
+        NotificationsModule
     ],
     providers: [
         {

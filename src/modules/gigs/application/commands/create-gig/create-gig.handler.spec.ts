@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing'
 import { BadRequestException } from '@nestjs/common'
+import { EventBus } from '@nestjs/cqrs'
 import { CreateGigHandler } from './create-gig.handler'
 import { CreateGigCommand } from './create-gig.command'
 import {
@@ -99,7 +100,8 @@ describe('CreateGigHandler', () => {
             providers: [
                 CreateGigHandler,
                 { provide: GIG_REPOSITORY_PORT, useValue: mockGigRepo },
-                { provide: CATEGORY_REPOSITORY_PORT, useValue: mockCategoryRepo }
+                { provide: CATEGORY_REPOSITORY_PORT, useValue: mockCategoryRepo },
+                { provide: EventBus, useValue: { publish: jest.fn() } }
             ]
         }).compile()
 

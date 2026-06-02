@@ -37,7 +37,7 @@ export class ApproveGigHandler implements ICommandHandler<ApproveGigCommand> {
             summary: `"${approved.title}"`,
             metadata: { sellerId: approved.sellerId }
         })
-        this.eventBus.publish(new GigApprovedEvent(approved.id, approved.sellerId))
+        this.eventBus.publish(new GigApprovedEvent(approved.id, approved.sellerId, approved.title))
         return approved
     }
 }

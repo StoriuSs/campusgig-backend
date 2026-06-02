@@ -1846,6 +1846,154 @@ async function seedAdminExtras(adminId: string): Promise<void> {
     console.log(`  ✓ ${noted.length} admin notes + 3 report exports`)
 }
 
+// ── F15: Notifications backfill ─────────────────────────────────────────────
+// Inserts a read/unread mix for a demo user + the seed admin directly, bypassing
+// CreateNotificationCommand and the email queue (the seed never sends mail).
+async function seedNotifications(users: SeededUser[], adminId: string): Promise<void> {
+    console.log('  → seeding notifications…')
+    const orderCode = (n: number): string => `CG-${String(n).padStart(4, '0')}`
+    const ago = (hours: number): Date => new Date(Date.now() - hours * 3_600_000)
+
+    interface NotifRow {
+        recipientId: string
+        type: string
+        data: Prisma.InputJsonValue
+        ageHours: number
+        read: boolean
+    }
+    const rows: NotifRow[] = []
+
+    // ── Demo user (mix of buyer + seller events) ─────────────────────────────
+    const demo = users[0]
+    const demoOrders = await prisma.order.findMany({
+        where: { OR: [{ buyerId: demo.id }, { sellerId: demo.id }] },
+        include: { buyer: true, seller: true },
+        orderBy: { placedAt: 'desc' },
+        take: 5
+    })
+    const orderTypeCycle = [
+        'order_placed',
+        'order_accepted',
+        'order_delivered',
+        'order_completed',
+        'extension_requested'
+    ]
+    demoOrders.forEach((o, i) => {
+        const counterpart = o.buyerId === demo.id ? o.seller : o.buyer
+        const actorName = counterpart.displayName ?? counterpart.username ?? 'Someone'
+        rows.push({
+            recipientId: demo.id,
+            type: orderTypeCycle[i % orderTypeCycle.length],
+            data: { actorName, orderId: o.id, orderCode: orderCode(o.number), gigTitle: o.gigTitleSnapshot },
+            ageHours: 2 + i * 9,
+            read: i >= 2 // newest 2 unread, older ones already read
+        })
+    })
+
+    // funds_released on the most recent order (escrow payout = price − 20% fee).
+    if (demoOrders[0]) {
+        const o = demoOrders[0]
+        const earning = o.gigPriceVndSnapshot - Math.floor((o.gigPriceVndSnapshot * 20) / 100)
+        rows.push({
+            recipientId: demo.id,
+            type: 'funds_released',
+            data: { orderId: o.id, orderCode: orderCode(o.number), gigTitle: o.gigTitleSnapshot, amountVnd: earning },
+            ageHours: 1,
+            read: false
+        })
+    }
+
+    // gig moderation outcomes on the demo user's own gigs.
+    const demoGigs = await prisma.gig.findMany({ where: { sellerId: demo.id }, take: 2 })
+    if (demoGigs[0]) {
+        rows.push({
+            recipientId: demo.id,
+            type: 'gig_approved',
+            data: { gigId: demoGigs[0].id, gigTitle: demoGigs[0].title },
+            ageHours: 30,
+            read: true
+        })
+    }
+    if (demoGigs[1]) {
+        rows.push({
+            recipientId: demo.id,
+            type: 'gig_rejected',
+            data: { gigId: demoGigs[1].id, gigTitle: demoGigs[1].title },
+            ageHours: 52,
+            read: true
+        })
+    }
+
+    // review + endorsement (no order/gig deep-link needed).
+    rows.push({ recipientId: demo.id, type: 'review_left', data: { ratingStars: 5 }, ageHours: 20, read: false })
+    rows.push({ recipientId: demo.id, type: 'endorsed', data: {}, ageHours: 80, read: true })
+    rows.push({ recipientId: demo.id, type: 'endorsement_revoked', data: {}, ageHours: 96, read: true })
+
+    // ── Admin (one row per admin event, English-rendered client-side) ────────
+    const pendingGig = await prisma.gig.findFirst({
+        where: { status: 'Pending', sellerId: { not: demo.id } },
+        orderBy: { submittedAt: 'desc' }
+    })
+    if (pendingGig) {
+        const seller = await prisma.user.findUnique({ where: { id: pendingGig.sellerId } })
+        rows.push({
+            recipientId: adminId,
+            type: 'admin_gig_pending',
+            data: {
+                gigId: pendingGig.id,
+                gigTitle: pendingGig.title,
+                sellerName: seller?.displayName ?? seller?.username ?? 'A seller'
+            },
+            ageHours: 3,
+            read: false
+        })
+    }
+
+    const dispute = await prisma.dispute.findFirst({
+        include: { order: true },
+        orderBy: { filedAt: 'desc' }
+    })
+    if (dispute) {
+        rows.push({
+            recipientId: adminId,
+            type: 'admin_dispute_filed',
+            data: { orderId: dispute.orderId, orderCode: orderCode(dispute.order.number) },
+            ageHours: 6,
+            read: false
+        })
+    }
+
+    const withdrawal = await prisma.withdrawalRequest.findFirst({
+        where: { status: 'Pending' },
+        include: { user: true },
+        orderBy: { requestedAt: 'desc' }
+    })
+    if (withdrawal) {
+        rows.push({
+            recipientId: adminId,
+            type: 'admin_withdrawal_requested',
+            data: {
+                amountVnd: withdrawal.amountVnd,
+                requesterName: withdrawal.user.displayName ?? withdrawal.user.username ?? 'A user'
+            },
+            ageHours: 14,
+            read: true
+        })
+    }
+
+    await prisma.notification.createMany({
+        data: rows.map((r) => ({
+            recipientId: r.recipientId,
+            type: r.type,
+            data: r.data,
+            readAt: r.read ? ago(r.ageHours - 0.5) : null,
+            createdAt: ago(r.ageHours),
+            emailSent: false
+        }))
+    })
+    console.log(`  ✓ ${rows.length} notifications seeded (demo user + admin)`)
+}
+
 // ── Cleanup (SEED_FORCE) ───────────────────────────────────────────────────
 
 async function cleanupSeedData(): Promise<void> {
@@ -1910,6 +2058,8 @@ async function cleanupSeedData(): Promise<void> {
     // so clear them before deleting users.
     await prisma.adminActivityLog.deleteMany({ where: { adminUserId: { in: seedUserIds } } })
     await prisma.reportExport.deleteMany({ where: { adminUserId: { in: seedUserIds } } })
+
+    await prisma.notification.deleteMany({ where: { recipientId: { in: seedUserIds } } })
 
     await prisma.gig.deleteMany({ where: { sellerId: { in: seedUserIds } } })
     await prisma.user.deleteMany({ where: { id: { in: seedUserIds } } })
@@ -1980,6 +2130,7 @@ async function main(): Promise<void> {
     await seedDisputes(users)
     await seedAdminActivity(adminId)
     await seedAdminExtras(adminId)
+    await seedNotifications(users, adminId)
 
     const elapsed = ((Date.now() - start) / 1000).toFixed(1)
     console.log(`✅ Seed complete in ${elapsed}s`)

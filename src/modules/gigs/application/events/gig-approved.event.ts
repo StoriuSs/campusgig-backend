@@ -9,6 +9,7 @@
 export class GigApprovedEvent {
     constructor(
         public readonly gigId: string,
-        public readonly sellerId: string
+        public readonly sellerId: string,
+        public readonly gigTitle: string
     ) {}
 }
