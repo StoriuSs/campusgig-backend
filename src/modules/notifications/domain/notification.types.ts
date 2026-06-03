@@ -44,3 +44,32 @@ export const EMAIL_TYPES: ReadonlySet<NotificationType> = new Set<NotificationTy
 export function isEmailType(type: NotificationType): boolean {
     return EMAIL_TYPES.has(type)
 }
+
+// F17 — per-user email preferences gate the email worker. In-app delivery is never gated.
+export interface EmailPreferences {
+    emailNotificationsEnabled: boolean
+    emailOrders: boolean
+    emailDisputes: boolean
+    emailGigs: boolean
+}
+
+// Email-able types → settings category (spec § event-category map).
+const EMAIL_CATEGORY: Partial<Record<NotificationType, 'orders' | 'disputes' | 'gigs'>> = {
+    order_placed: 'orders',
+    order_delivered: 'orders',
+    order_auto_completed: 'orders',
+    extension_requested: 'orders',
+    cancellation_requested: 'orders',
+    dispute_filed: 'disputes',
+    dispute_resolved: 'disputes',
+    gig_rejected: 'gigs'
+}
+
+export function emailAllowed(type: NotificationType, prefs: EmailPreferences): boolean {
+    if (!prefs.emailNotificationsEnabled) return false
+    const category = EMAIL_CATEGORY[type]
+    if (category === 'orders') return prefs.emailOrders
+    if (category === 'disputes') return prefs.emailDisputes
+    if (category === 'gigs') return prefs.emailGigs
+    return true // uncategorized email type (none today) → allowed by default
+}

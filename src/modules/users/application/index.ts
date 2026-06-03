@@ -4,6 +4,8 @@ export * from './ports'
 // Export all commands
 export * from './commands/update-profile/update-profile.command'
 export * from './commands/update-profile/update-profile.handler'
+export * from './commands/update-email-preferences/update-email-preferences.command'
+export * from './commands/update-email-preferences/update-email-preferences.handler'
 export * from './commands/set-username/set-username.command'
 export * from './commands/set-username/set-username.handler'
 export * from './commands/upload-avatar/upload-avatar.command'

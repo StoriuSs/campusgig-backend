@@ -30,6 +30,10 @@ export class UserMapper {
             isAdmin: prismaUser.isAdmin,
             reviewCount: prismaUser.reviewCount,
             ratingSumHalfStars: prismaUser.ratingSumHalfStars,
+            emailNotificationsEnabled: prismaUser.emailNotificationsEnabled,
+            emailOrders: prismaUser.emailOrders,
+            emailDisputes: prismaUser.emailDisputes,
+            emailGigs: prismaUser.emailGigs,
             createdAt: prismaUser.createdAt,
             updatedAt: prismaUser.updatedAt,
             deletedAt: prismaUser.deletedAt,
@@ -57,6 +61,11 @@ export class UserMapper {
         if (entity.endorsedBy !== undefined) data.endorsedBy = entity.endorsedBy
         if (entity.adminNote !== undefined) data.adminNote = entity.adminNote
         if (entity.isAdmin !== undefined) data.isAdmin = entity.isAdmin
+        if (entity.emailNotificationsEnabled !== undefined)
+            data.emailNotificationsEnabled = entity.emailNotificationsEnabled
+        if (entity.emailOrders !== undefined) data.emailOrders = entity.emailOrders
+        if (entity.emailDisputes !== undefined) data.emailDisputes = entity.emailDisputes
+        if (entity.emailGigs !== undefined) data.emailGigs = entity.emailGigs
         if (entity.deletedAt !== undefined) data.deletedAt = entity.deletedAt
         if (entity.deletedBy !== undefined) data.deletedBy = entity.deletedBy
 

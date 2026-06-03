@@ -106,6 +106,29 @@ export class PrismaNotificationRepository implements NotificationRepositoryPort 
         return user?.email ?? null
     }
 
+    async findEmailRecipient(userId: string) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                email: true,
+                emailNotificationsEnabled: true,
+                emailOrders: true,
+                emailDisputes: true,
+                emailGigs: true
+            }
+        })
+        if (!user) return null
+        return {
+            email: user.email ?? null,
+            prefs: {
+                emailNotificationsEnabled: user.emailNotificationsEnabled,
+                emailOrders: user.emailOrders,
+                emailDisputes: user.emailDisputes,
+                emailGigs: user.emailGigs
+            }
+        }
+    }
+
     async findDisplayName(userId: string): Promise<string | null> {
         const user = await this.prisma.user.findUnique({
             where: { id: userId },

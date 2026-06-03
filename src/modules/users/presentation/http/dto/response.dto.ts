@@ -62,6 +62,14 @@ export class PortfolioItemResponseDto {
 }
 
 @Exclude()
+export class EmailPreferencesResponseDto {
+    @Expose() @IsBoolean() emailNotificationsEnabled!: boolean
+    @Expose() @IsBoolean() emailOrders!: boolean
+    @Expose() @IsBoolean() emailDisputes!: boolean
+    @Expose() @IsBoolean() emailGigs!: boolean
+}
+
+@Exclude()
 export class UserProfileResponseDto {
     @Expose()
     @IsString()
@@ -181,6 +189,11 @@ export class UserProfileResponseDto {
     })
     @IsBoolean()
     isAdmin!: boolean
+
+    @Expose()
+    @ValidateNested()
+    @Type(() => EmailPreferencesResponseDto)
+    emailPreferences!: EmailPreferencesResponseDto
 }
 
 @Exclude()

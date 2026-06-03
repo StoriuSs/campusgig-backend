@@ -1,4 +1,5 @@
 export { UpdateProfileRequestDto } from './update-profile.request.dto'
+export { UpdateEmailPreferencesRequestDto } from './update-email-preferences.request.dto'
 export { SetUsernameRequestDto } from './set-username.request.dto'
 export { AddSkillRequestDto } from './add-skill.request.dto'
 export { SaveAdminNoteRequestDto } from './save-admin-note.request.dto'
@@ -10,6 +11,7 @@ export {
 } from './admin-user-responses.dto'
 export {
     UserProfileResponseDto,
+    EmailPreferencesResponseDto,
     UpdateProfileResponseDto,
     SetUsernameResponseDto,
     UploadAvatarResponseDto,

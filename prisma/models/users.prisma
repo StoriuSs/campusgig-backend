@@ -44,6 +44,13 @@ model User {
   bankAccountNumber String?
   bankAccountHolder String?
 
+  // F17 email preferences: master + per-category. Default true keeps F15's
+  // send-everything; in-app notifications are never gated by these.
+  emailNotificationsEnabled Boolean @default(true)
+  emailOrders               Boolean @default(true)
+  emailDisputes             Boolean @default(true)
+  emailGigs                 Boolean @default(true)
+
   createdAt DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt DateTime  @updatedAt @db.Timestamptz(6)
   deletedAt DateTime? @db.Timestamptz(6)

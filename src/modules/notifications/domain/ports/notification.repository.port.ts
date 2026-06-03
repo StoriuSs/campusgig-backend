@@ -1,4 +1,4 @@
-import { NotificationData, NotificationFilter, NotificationType } from '../notification.types'
+import { EmailPreferences, NotificationData, NotificationFilter, NotificationType } from '../notification.types'
 
 export const NOTIFICATION_REPOSITORY_PORT = Symbol('NotificationRepositoryPort')
 
@@ -41,5 +41,7 @@ export interface NotificationRepositoryPort {
     markEmailSent(id: string): Promise<void>
     findAdminIds(): Promise<string[]>
     findRecipientEmail(userId: string): Promise<string | null>
+    // Email + the recipient's email preferences (F17), in one read for the email worker.
+    findEmailRecipient(userId: string): Promise<{ email: string | null; prefs: EmailPreferences } | null>
     findDisplayName(userId: string): Promise<string | null>
 }

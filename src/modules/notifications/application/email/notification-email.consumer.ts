@@ -9,7 +9,7 @@ import {
     NOTIFICATION_REPOSITORY_PORT,
     NotificationRepositoryPort
 } from '../../domain/ports/notification.repository.port'
-import { NotificationData, NotificationType } from '../../domain/notification.types'
+import { NotificationData, NotificationType, emailAllowed } from '../../domain/notification.types'
 import { notificationPath, renderNotificationEmail } from '../notification-render'
 import { NOTIFICATION_EMAIL_QUEUE } from './notification-email.queue'
 
@@ -35,11 +35,17 @@ export class NotificationEmailConsumer extends WorkerHost {
     async process(job: Job<NotificationEmailJob, void, string>): Promise<void> {
         const { notificationId, recipientId, type, data } = job.data
         this.logger.log(`Processing notification-email job ${job.id} → type=${type} notificationId=${notificationId}`)
-        const email = await this.repo.findRecipientEmail(recipientId)
-        if (!email) {
+        const recipient = await this.repo.findEmailRecipient(recipientId)
+        if (!recipient?.email) {
             this.logger.warn(`No email for recipient ${recipientId}; skipping notification email ${notificationId}`)
             return
         }
+        // F17 — respect the recipient's per-category email preferences (in-app already delivered).
+        if (!emailAllowed(type, recipient.prefs)) {
+            this.logger.log(`Recipient ${recipientId} opted out of ${type} emails; skipping ${notificationId}`)
+            return
+        }
+        const email = recipient.email
 
         const { subject, heading, body, ctaLabel } = renderNotificationEmail(type, data)
         const frontendUrl = (this.config.get<string>('app.frontendUrl') ?? '').replace(/\/+$/, '')

@@ -12,6 +12,7 @@ import {
     STORAGE_PORT,
     CACHE_PORT,
     UpdateProfileHandler,
+    UpdateEmailPreferencesHandler,
     SetUsernameHandler,
     UploadAvatarHandler,
     DeleteAccountHandler,
@@ -41,6 +42,7 @@ import { UsersController, AdminUsersController, FileCleanupConsumer, KeycloakDel
 // Command Handlers array
 const CommandHandlers = [
     UpdateProfileHandler,
+    UpdateEmailPreferencesHandler,
     SetUsernameHandler,
     UploadAvatarHandler,
     DeleteAccountHandler,

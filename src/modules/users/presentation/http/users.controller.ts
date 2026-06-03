@@ -22,9 +22,11 @@ import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse, ApiParam, ApiConsume
 // Presentation DTOs
 import {
     UpdateProfileRequestDto,
+    UpdateEmailPreferencesRequestDto,
     SetUsernameRequestDto,
     AddSkillRequestDto,
     UserProfileResponseDto,
+    EmailPreferencesResponseDto,
     UpdateProfileResponseDto,
     SetUsernameResponseDto,
     UploadAvatarResponseDto,
@@ -36,6 +38,7 @@ import {
 // Commands & Queries
 import {
     UpdateProfileCommand,
+    UpdateEmailPreferencesCommand,
     SetUsernameCommand,
     UploadAvatarCommand,
     DeleteAccountCommand,
@@ -111,7 +114,13 @@ export class UsersController {
             memberSince: bundle.user.createdAt.toISOString(),
             skills: bundle.skills.map((s) => this.mapSkill(s)),
             portfolioItems,
-            isAdmin: bundle.user.isAdmin
+            isAdmin: bundle.user.isAdmin,
+            emailPreferences: {
+                emailNotificationsEnabled: bundle.user.emailNotificationsEnabled,
+                emailOrders: bundle.user.emailOrders,
+                emailDisputes: bundle.user.emailDisputes,
+                emailGigs: bundle.user.emailGigs
+            }
         })
 
         return createResponse(
@@ -248,6 +257,39 @@ export class UsersController {
             RESPONSE_CODES.USER_UPDATE_SUCCESS,
             RESPONSE_TYPES.USER_UPDATE,
             MESSAGES.USER.PROFILE_UPDATED,
+            responseData
+        )
+    }
+
+    @Patch('me/email-preferences')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({
+        summary: 'Update email-notification preferences',
+        description: 'Partial update of the master switch + per-category (Orders / Disputes / Gigs) email toggles.'
+    })
+    @ApiResponse({ status: 200, description: 'Preferences updated', type: EmailPreferencesResponseDto })
+    async updateEmailPreferences(
+        @CurrentUser() user: AuthenticatedKeycloakUser,
+        @Body() dto: UpdateEmailPreferencesRequestDto
+    ): Promise<ServiceResponse<EmailPreferencesResponseDto>> {
+        const result: UserEntity = await this.commandBus.execute(
+            new UpdateEmailPreferencesCommand(user.local.dbId, {
+                emailNotificationsEnabled: dto.emailNotificationsEnabled,
+                emailOrders: dto.emailOrders,
+                emailDisputes: dto.emailDisputes,
+                emailGigs: dto.emailGigs
+            })
+        )
+        const responseData = validateAndTransform(EmailPreferencesResponseDto, {
+            emailNotificationsEnabled: result.emailNotificationsEnabled,
+            emailOrders: result.emailOrders,
+            emailDisputes: result.emailDisputes,
+            emailGigs: result.emailGigs
+        })
+        return createResponse(
+            RESPONSE_CODES.USER_UPDATE_SUCCESS,
+            RESPONSE_TYPES.USER_UPDATE,
+            MESSAGES.USER.EMAIL_PREFERENCES_UPDATED,
             responseData
         )
     }

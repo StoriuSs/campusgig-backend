@@ -36,6 +36,12 @@ export class UserEntity {
     reviewCount: number
     ratingSumHalfStars: number
 
+    // Email-notification preferences (F17). Master kill-switch + per-category.
+    emailNotificationsEnabled: boolean
+    emailOrders: boolean
+    emailDisputes: boolean
+    emailGigs: boolean
+
     readonly createdAt: Date
     updatedAt: Date
     deletedAt: Date | null
@@ -59,6 +65,10 @@ export class UserEntity {
         isAdmin?: boolean
         reviewCount?: number
         ratingSumHalfStars?: number
+        emailNotificationsEnabled?: boolean
+        emailOrders?: boolean
+        emailDisputes?: boolean
+        emailGigs?: boolean
         createdAt?: Date
         updatedAt?: Date
         deletedAt?: Date | null
@@ -81,6 +91,10 @@ export class UserEntity {
         this.isAdmin = props.isAdmin ?? false
         this.reviewCount = props.reviewCount ?? 0
         this.ratingSumHalfStars = props.ratingSumHalfStars ?? 0
+        this.emailNotificationsEnabled = props.emailNotificationsEnabled ?? true
+        this.emailOrders = props.emailOrders ?? true
+        this.emailDisputes = props.emailDisputes ?? true
+        this.emailGigs = props.emailGigs ?? true
         this.createdAt = props.createdAt ?? new Date()
         this.updatedAt = props.updatedAt ?? new Date()
         this.deletedAt = props.deletedAt ?? null

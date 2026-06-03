@@ -80,6 +80,10 @@ export class PrismaUserRepository implements UserRepositoryPort {
                 | 'endorsedAt'
                 | 'endorsedBy'
                 | 'adminNote'
+                | 'emailNotificationsEnabled'
+                | 'emailOrders'
+                | 'emailDisputes'
+                | 'emailGigs'
                 | 'deletedAt'
                 | 'deletedBy'
             >

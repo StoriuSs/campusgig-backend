@@ -83,6 +83,7 @@ export const MESSAGES = {
         ACCOUNT_DELETED: 'Account deleted successfully',
         NOT_FOUND: 'User not found',
         PROFILE_UPDATED: 'Profile updated successfully',
+        EMAIL_PREFERENCES_UPDATED: 'Email preferences updated successfully',
         USERNAME_TAKEN: 'Username is already taken. Please choose another.',
         USERNAME_SET_SUCCESS: 'Username set successfully',
         USERNAME_ALREADY_SET: 'Username has already been set and cannot be changed'
