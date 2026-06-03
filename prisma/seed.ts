@@ -2096,6 +2096,28 @@ async function seedPlatformUser(): Promise<void> {
     })
 }
 
+// Recompute the denormalized Browse-sort counters once, after orders + reviews exist.
+async function finalizeGigCounters(): Promise<void> {
+    console.log('  → finalizing gig sort counters…')
+    const gigs = await prisma.gig.findMany({ select: { id: true, reviewCount: true, ratingSumHalfStars: true } })
+    const completed = await prisma.order.groupBy({
+        by: ['gigId'],
+        where: { status: 'Completed' },
+        _count: { _all: true }
+    })
+    const completedById = new Map(completed.map((c) => [c.gigId, c._count._all]))
+    for (const g of gigs) {
+        await prisma.gig.update({
+            where: { id: g.id },
+            data: {
+                avgRating: g.reviewCount > 0 ? g.ratingSumHalfStars / 2 / g.reviewCount : 0,
+                completedOrderCount: completedById.get(g.id) ?? 0
+            }
+        })
+    }
+    console.log(`  ✓ ${gigs.length} gig counters finalized`)
+}
+
 async function main(): Promise<void> {
     console.log('🌱 CampusGig seed starting…')
     const start = Date.now()
@@ -2128,6 +2150,7 @@ async function main(): Promise<void> {
     await seedOrders(users)
     await seedGigViews(gigs)
     await seedDisputes(users)
+    await finalizeGigCounters()
     await seedAdminActivity(adminId)
     await seedAdminExtras(adminId)
     await seedNotifications(users, adminId)

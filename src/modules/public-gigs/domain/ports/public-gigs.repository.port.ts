@@ -80,10 +80,12 @@ export interface BrowseGigsFilters {
     minPrice?: number
     maxPrice?: number
     minRating?: number
+    // True = only unrated "new seller" gigs (mutually exclusive with minRating).
+    newSellersOnly?: boolean
     maxDelivery?: number
     endorsedOnly?: boolean
     sellerId?: string
-    sort: 'newest' | 'rating' | 'priceAsc' | 'priceDesc'
+    sort: 'newest' | 'rating' | 'priceAsc' | 'priceDesc' | 'mostCompletedOrders'
     page: number
     pageSize: number
     userId?: string

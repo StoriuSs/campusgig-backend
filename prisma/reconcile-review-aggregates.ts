@@ -1,7 +1,7 @@
-// Maintenance: recompute the denormalized review aggregates (reviewCount,
-// ratingSumHalfStars) on Gig + User from the actual Review rows. These can
-// drift if a Review is ever removed via cascade (e.g. an order hard-delete)
-// without decrementing the counters. Idempotent — safe to re-run any time.
+// Maintenance: recompute the denormalized aggregates on Gig + User from the
+// source rows — review counts (reviewCount, ratingSumHalfStars, avgRating) and
+// the per-gig completedOrderCount. These can drift if rows are removed via
+// cascade (e.g. an order hard-delete). Idempotent — safe to re-run any time.
 //
 //   pnpm exec dotenv -e .env.development -- ts-node prisma/reconcile-review-aggregates.ts
 import { Pool } from 'pg'
@@ -20,14 +20,17 @@ async function reconcileGigs(): Promise<void> {
     })
     const realById = new Map(groups.map((g) => [g.gigId, { count: g._count._all, sum: g._sum.ratingHalfStars ?? 0 }]))
 
-    const rows = await prisma.gig.findMany({ select: { id: true, reviewCount: true, ratingSumHalfStars: true } })
+    const rows = await prisma.gig.findMany({
+        select: { id: true, reviewCount: true, ratingSumHalfStars: true, avgRating: true }
+    })
     let fixed = 0
     for (const row of rows) {
         const real = realById.get(row.id) ?? { count: 0, sum: 0 }
-        if (row.reviewCount === real.count && row.ratingSumHalfStars === real.sum) continue
+        const realAvg = real.count > 0 ? real.sum / 2 / real.count : 0
+        if (row.reviewCount === real.count && row.ratingSumHalfStars === real.sum && row.avgRating === realAvg) continue
         await prisma.gig.update({
             where: { id: row.id },
-            data: { reviewCount: real.count, ratingSumHalfStars: real.sum }
+            data: { reviewCount: real.count, ratingSumHalfStars: real.sum, avgRating: realAvg }
         })
         fixed++
         console.log(
@@ -35,6 +38,26 @@ async function reconcileGigs(): Promise<void> {
         )
     }
     console.log(`gig: ${fixed} reconciled (${rows.length} scanned)`)
+}
+
+async function reconcileCompletedOrders(): Promise<void> {
+    const groups = await prisma.order.groupBy({
+        by: ['gigId'],
+        where: { status: 'Completed' },
+        _count: { _all: true }
+    })
+    const realById = new Map(groups.map((g) => [g.gigId, g._count._all]))
+
+    const rows = await prisma.gig.findMany({ select: { id: true, completedOrderCount: true } })
+    let fixed = 0
+    for (const row of rows) {
+        const real = realById.get(row.id) ?? 0
+        if (row.completedOrderCount === real) continue
+        await prisma.gig.update({ where: { id: row.id }, data: { completedOrderCount: real } })
+        fixed++
+        console.log(`  gig ${row.id}: completedOrders ${row.completedOrderCount}→${real}`)
+    }
+    console.log(`gig completedOrders: ${fixed} reconciled (${rows.length} scanned)`)
 }
 
 async function reconcileUsers(): Promise<void> {
@@ -68,6 +91,7 @@ async function main() {
     console.log('Reconciling review aggregates…')
     await reconcileGigs()
     await reconcileUsers()
+    await reconcileCompletedOrders()
     console.log('Done.')
 }
 

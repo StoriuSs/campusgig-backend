@@ -143,9 +143,14 @@ export class PrismaReviewsRepository implements ReviewsRepositoryPort {
                     throw e
                 })
 
-            await tx.gig.update({
+            const gig = await tx.gig.update({
                 where: { id: order.gigId },
                 data: { reviewCount: { increment: 1 }, ratingSumHalfStars: { increment: input.ratingHalfStars } }
+            })
+            // Keep the denormalized avg (used by Browse sort/filter) in step with the counters.
+            await tx.gig.update({
+                where: { id: order.gigId },
+                data: { avgRating: gig.reviewCount > 0 ? gig.ratingSumHalfStars / 2 / gig.reviewCount : 0 }
             })
             await tx.user.update({
                 where: { id: order.sellerId },

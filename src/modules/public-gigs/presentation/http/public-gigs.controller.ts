@@ -53,10 +53,16 @@ export class PublicGigsController {
     @ApiQuery({ name: 'categoryId', required: false })
     @ApiQuery({ name: 'minPrice', required: false, type: Number })
     @ApiQuery({ name: 'maxPrice', required: false, type: Number })
+    @ApiQuery({ name: 'minRating', required: false, type: Number })
+    @ApiQuery({ name: 'newSellersOnly', required: false, type: Boolean })
     @ApiQuery({ name: 'maxDelivery', required: false, type: Number })
     @ApiQuery({ name: 'endorsedOnly', required: false, type: Boolean })
     @ApiQuery({ name: 'sellerId', required: false })
-    @ApiQuery({ name: 'sort', required: false, enum: ['newest', 'rating', 'priceAsc', 'priceDesc'] })
+    @ApiQuery({
+        name: 'sort',
+        required: false,
+        enum: ['newest', 'rating', 'mostCompletedOrders', 'priceAsc', 'priceDesc']
+    })
     @ApiQuery({ name: 'page', required: false, type: Number })
     @ApiQuery({ name: 'pageSize', required: false, type: Number })
     @ApiResponse({ status: 200, type: BrowseGigsResponseDto })
@@ -66,6 +72,8 @@ export class PublicGigsController {
         @Query('categoryId') categoryId?: string,
         @Query('minPrice') minPrice?: string,
         @Query('maxPrice') maxPrice?: string,
+        @Query('minRating') minRating?: string,
+        @Query('newSellersOnly') newSellersOnly?: string,
         @Query('maxDelivery') maxDelivery?: string,
         @Query('endorsedOnly') endorsedOnly?: string,
         @Query('sellerId') sellerId?: string,
@@ -82,6 +90,9 @@ export class PublicGigsController {
         const parsedMaxPrice = maxPrice ? Number.parseInt(maxPrice, 10) : undefined
         const parsedMaxDelivery = maxDelivery ? Number.parseInt(maxDelivery, 10) : undefined
         const parsedEndorsedOnly = endorsedOnly === 'true'
+        const parsedNewSellersOnly = newSellersOnly === 'true'
+        // New sellers and a rating threshold are mutually exclusive; "new" wins.
+        const parsedMinRating = !parsedNewSellersOnly && minRating ? Number.parseFloat(minRating) : undefined
 
         // Cache key is anonymous — never includes userId.
         // isSaved is injected live after cache lookup so it's always fresh.
@@ -90,6 +101,8 @@ export class PublicGigsController {
             categoryId,
             minPrice: parsedMinPrice,
             maxPrice: parsedMaxPrice,
+            minRating: parsedMinRating,
+            newSellersOnly: parsedNewSellersOnly,
             maxDelivery: parsedMaxDelivery,
             endorsedOnly: parsedEndorsedOnly,
             sellerId,
@@ -105,7 +118,9 @@ export class PublicGigsController {
                   ? ('priceDesc' as const)
                   : sort === 'rating'
                     ? ('rating' as const)
-                    : ('newest' as const)
+                    : sort === 'mostCompletedOrders'
+                      ? ('mostCompletedOrders' as const)
+                      : ('newest' as const)
         const cached = await this.cache.get<BrowseGigsResult>(cacheKey)
         const result: BrowseGigsResult =
             cached ??
@@ -115,6 +130,8 @@ export class PublicGigsController {
                     categoryId,
                     minPrice: parsedMinPrice,
                     maxPrice: parsedMaxPrice,
+                    minRating: parsedMinRating,
+                    newSellersOnly: parsedNewSellersOnly,
                     maxDelivery: parsedMaxDelivery,
                     endorsedOnly: parsedEndorsedOnly,
                     sellerId,

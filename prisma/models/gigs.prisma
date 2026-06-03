@@ -24,6 +24,11 @@ model Gig {
   reviewCount        Int @default(0)
   ratingSumHalfStars Int @default(0)
 
+  // Denormalized for Browse sort + rating filter (DB can't ORDER BY a derived ratio
+  // or a filtered cross-table count). avgRating = the derived 1-5 value, 0 when unrated.
+  avgRating           Float @default(0)
+  completedOrderCount Int   @default(0)
+
   submittedAt DateTime? @db.Timestamptz(6)
   approvedAt  DateTime? @db.Timestamptz(6)
   pausedAt    DateTime? @db.Timestamptz(6)
@@ -49,6 +54,8 @@ model Gig {
   @@index([status])
   @@index([categoryId])
   @@index([deletedAt])
+  @@index([avgRating])
+  @@index([completedOrderCount])
 }
 
 // One row per public gig-detail view (drives the Manage Gig Performance card).

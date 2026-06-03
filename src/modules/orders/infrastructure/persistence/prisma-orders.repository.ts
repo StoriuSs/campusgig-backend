@@ -1052,6 +1052,7 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
                 data: { status: 'Completed', completedAt: now },
                 include: this.orderIncludes
             })
+            await tx.gig.update({ where: { id: order.gigId }, data: { completedOrderCount: { increment: 1 } } })
 
             const { earning, platformFee } = await this.walletRepo.releaseFromEscrow(
                 order.buyerId,
@@ -2099,6 +2100,7 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
                 data: { status: 'Completed', completedAt: now },
                 include: this.orderIncludes
             })
+            await tx.gig.update({ where: { id: order.gigId }, data: { completedOrderCount: { increment: 1 } } })
 
             const { earning, platformFee } = await this.walletRepo.releaseFromEscrow(
                 order.buyerId,

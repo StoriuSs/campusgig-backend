@@ -30,8 +30,21 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
     }
 
     async browse(filters: BrowseGigsFilters): Promise<BrowseGigsResult> {
-        const { q, categoryId, minPrice, maxPrice, maxDelivery, endorsedOnly, sellerId, sort, page, pageSize, userId } =
-            filters
+        const {
+            q,
+            categoryId,
+            minPrice,
+            maxPrice,
+            minRating,
+            newSellersOnly,
+            maxDelivery,
+            endorsedOnly,
+            sellerId,
+            sort,
+            page,
+            pageSize,
+            userId
+        } = filters
         const skip = (page - 1) * pageSize
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,6 +54,14 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
         if (minPrice !== undefined) where.priceVnd = { ...where.priceVnd, gte: minPrice }
         if (maxPrice !== undefined) where.priceVnd = { ...where.priceVnd, lte: maxPrice }
         if (maxDelivery !== undefined) where.deliveryDays = { lte: maxDelivery }
+
+        // Rating filter: "new sellers" = no reviews yet; otherwise avg ≥ threshold (rated gigs only).
+        if (newSellersOnly) {
+            where.reviewCount = 0
+        } else if (minRating !== undefined) {
+            where.reviewCount = { gt: 0 }
+            where.avgRating = { gte: minRating }
+        }
 
         // No Gig→User relation in Prisma; pre-fetch endorsed seller IDs.
         if (endorsedOnly) {
@@ -66,7 +87,11 @@ export class PrismaPublicGigsRepository implements PublicGigsRepositoryPort {
                 ? [{ priceVnd: 'asc' as const }]
                 : sort === 'priceDesc'
                   ? [{ priceVnd: 'desc' as const }]
-                  : [{ createdAt: 'desc' as const }]
+                  : sort === 'rating'
+                    ? [{ avgRating: 'desc' as const }, { reviewCount: 'desc' as const }]
+                    : sort === 'mostCompletedOrders'
+                      ? [{ completedOrderCount: 'desc' as const }, { createdAt: 'desc' as const }]
+                      : [{ createdAt: 'desc' as const }]
 
         const [rows, total] = await this.prisma.$transaction([
             this.prisma.gig.findMany({
