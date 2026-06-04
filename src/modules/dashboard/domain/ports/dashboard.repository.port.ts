@@ -81,8 +81,11 @@ export interface RecommendedGig {
     gigId: string
     title: string
     coverKey: string | null
+    sellerId: string
     sellerName: string
+    sellerUsername: string | null
     sellerAvatarKey: string | null
+    sellerIsEndorsed: boolean
     ratingAverage: number
     reviewCount: number
     priceVnd: number

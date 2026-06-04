@@ -22,6 +22,7 @@ import { memoryStorage } from 'multer'
 import { GIG_STORAGE_PORT, GigStoragePort } from '@/modules/gigs/application/ports'
 import { MESSAGES, RESPONSE_CODES, RESPONSE_TYPES } from '@/shared/constants'
 import { CurrentUser } from '@/shared/infrastructure'
+import { Idempotent } from '@/shared/presentation/decorators'
 import { AuthenticatedKeycloakUser, ServiceResponse, createResponse } from '@/shared/types'
 import { formatOrderCode, validateAndTransform } from '@/shared/utils'
 
@@ -180,6 +181,7 @@ export class OrdersController {
 
     @Post()
     @HttpCode(HttpStatus.CREATED)
+    @Idempotent('5m')
     @ApiOperation({ summary: 'Place a new order (escrow + buyer wallet debit)' })
     @ApiResponse({ status: 201, type: OrderDetailResponseDto })
     async placeOrder(

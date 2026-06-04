@@ -242,15 +242,28 @@ export class PrismaDashboardRepository implements DashboardRepositoryPort {
 
     // ── Buyer ──────────────────────────────────────────────────────────────────
     async getBuyerCacheable(userId: string): Promise<BuyerDashboardCacheable> {
-        const [ordersCompleted, escrowOrders, sellerGroups, spendAgg, recentRaw, anyOrder] = await Promise.all([
-            this.prisma.order.count({ where: { buyerId: userId, status: 'Completed' } }),
+        // Total spent = Payment − Refund on the buyer's COMPLETED orders only. This nets out a
+        // SplitFunds dispute's partial refund, and excludes cancelled-refunded orders entirely
+        // and in-escrow active orders (the latter has its own stat).
+        const completedIds = (
+            await this.prisma.order.findMany({
+                where: { buyerId: userId, status: 'Completed' },
+                select: { id: true }
+            })
+        ).map((o) => o.id)
+
+        const [escrowOrders, sellerGroups, paidAgg, refundAgg, recentRaw, anyOrder] = await Promise.all([
             this.prisma.order.findMany({
                 where: { buyerId: userId, status: { in: [...ACTIVE_BUYER_STATUSES] } },
                 select: { gigPriceVndSnapshot: true }
             }),
             this.prisma.order.groupBy({ by: ['sellerId'], where: { buyerId: userId, status: 'Completed' } }),
             this.prisma.transaction.aggregate({
-                where: { userId, type: 'Payment', status: 'Completed' },
+                where: { userId, type: 'Payment', orderId: { in: completedIds } },
+                _sum: { amountVnd: true }
+            }),
+            this.prisma.transaction.aggregate({
+                where: { userId, type: 'Refund', orderId: { in: completedIds } },
                 _sum: { amountVnd: true }
             }),
             this.prisma.order.findMany({
@@ -266,10 +279,10 @@ export class PrismaDashboardRepository implements DashboardRepositoryPort {
 
         return {
             statCards: {
-                ordersCompleted,
+                ordersCompleted: completedIds.length,
                 inEscrowVnd: escrowOrders.reduce((s, o) => s + o.gigPriceVndSnapshot, 0),
                 sellersWorkedWith: sellerGroups.length,
-                totalSpentVnd: spendAgg._sum.amountVnd ?? 0
+                totalSpentVnd: (paidAgg._sum.amountVnd ?? 0) - (refundAgg._sum.amountVnd ?? 0)
             },
             recentOrders: recentRaw.map((o) => this.toOrderRow(o, 'buyer')),
             recommendations,
@@ -346,7 +359,7 @@ export class PrismaDashboardRepository implements DashboardRepositoryPort {
         const sellerIds = [...new Set(picked.map((g) => g.sellerId))]
         const sellers = await this.prisma.user.findMany({
             where: { id: { in: sellerIds } },
-            select: { id: true, displayName: true, username: true, avatarUrl: true }
+            select: { id: true, displayName: true, username: true, avatarUrl: true, endorsedAt: true }
         })
         const sellerById = new Map(sellers.map((u) => [u.id, u]))
 
@@ -356,8 +369,11 @@ export class PrismaDashboardRepository implements DashboardRepositoryPort {
                 gigId: g.id,
                 title: g.title,
                 coverKey: g.images[0]?.imageKey ?? null,
+                sellerId: g.sellerId,
                 sellerName: s?.displayName ?? s?.username ?? 'Seller',
+                sellerUsername: s?.username ?? null,
                 sellerAvatarKey: s?.avatarUrl ?? null,
+                sellerIsEndorsed: s?.endorsedAt != null,
                 ratingAverage: g.reviewCount > 0 ? Math.round((g.ratingSumHalfStars / 2 / g.reviewCount) * 10) / 10 : 0,
                 reviewCount: g.reviewCount,
                 priceVnd: g.priceVnd,

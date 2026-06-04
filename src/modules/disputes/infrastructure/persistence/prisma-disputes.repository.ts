@@ -322,6 +322,11 @@ export class PrismaDisputesRepository implements DisputesRepositoryPort {
                         : { completedAt: now })
                 }
             })
+            // Resolving in the seller's favour completes the order — keep the denormalized
+            // Browse counter in step with the other completion paths.
+            if (terminalStatus === 'Completed') {
+                await tx.gig.update({ where: { id: order.gigId }, data: { completedOrderCount: { increment: 1 } } })
+            }
             await tx.dispute.update({
                 where: { id: dispute.id },
                 data: {

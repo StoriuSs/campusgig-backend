@@ -16,8 +16,11 @@ class RecommendedGigDto {
     @Expose() @IsString() gigId!: string
     @Expose() @IsString() title!: string
     @Expose() @IsOptional() @IsString() coverUrl!: string | null
+    @Expose() @IsString() sellerId!: string
     @Expose() @IsString() sellerName!: string
+    @Expose() @IsOptional() @IsString() sellerUsername!: string | null
     @Expose() @IsOptional() @IsString() sellerAvatarUrl!: string | null
+    @Expose() @IsBoolean() sellerIsEndorsed!: boolean
     @Expose() @IsNumber() ratingAverage!: number
     @Expose() @IsInt() reviewCount!: number
     @Expose() @IsInt() priceVnd!: number

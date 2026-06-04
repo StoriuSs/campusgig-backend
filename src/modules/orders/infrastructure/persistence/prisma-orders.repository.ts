@@ -1037,6 +1037,9 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
     async acceptDelivery(orderId: string, viewerId: string): Promise<{ order: OrderDetail; refs: MoneyMoveRefs }> {
         let pendingSysEvent: { threadId: string; message: MessageItem } | null = null
         const result = await this.prisma.$transaction(async (tx) => {
+            // Serialize concurrent transitions on this order (buyer accept racing the
+            // auto-finalize/auto-complete jobs) so escrow is released exactly once.
+            await tx.$queryRaw`SELECT 1 FROM "Order" WHERE id = ${orderId} FOR UPDATE`
             const order = await tx.order.findUnique({ where: { id: orderId } })
             if (!order) throw new OrderNotFoundException(orderId)
             if (order.buyerId !== viewerId) {
@@ -2028,6 +2031,8 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
         let pendingDispute: { orderId: string; deadline: Date } | null = null
 
         const result = await this.prisma.$transaction(async (tx) => {
+            // Row lock — see acceptDelivery; serializes against a concurrent buyer accept.
+            await tx.$queryRaw`SELECT 1 FROM "Order" WHERE id = ${orderId} FOR UPDATE`
             const order = await tx.order.findUnique({ where: { id: orderId } })
             if (!order) return null
             // Idempotent — buyer may have accepted in the last second.
@@ -2090,6 +2095,8 @@ export class PrismaOrdersRepository implements OrdersRepositoryPort {
         let pendingSysEvent: { threadId: string; message: MessageItem } | null = null
 
         const result = await this.prisma.$transaction(async (tx) => {
+            // Row lock — see acceptDelivery; prevents a double escrow release.
+            await tx.$queryRaw`SELECT 1 FROM "Order" WHERE id = ${orderId} FOR UPDATE`
             const order = await tx.order.findUnique({ where: { id: orderId } })
             if (!order) return null
             if (order.status !== 'AwaitingFinalization') return null

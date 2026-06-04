@@ -571,8 +571,10 @@ async function seedSavedGigs(users: SeededUser[], gigs: SeededGig[]): Promise<vo
     }
 
     let savedCount = 0
-    for (const user of users) {
-        const count = faker.number.int({ min: 10, max: 25 })
+    // Only the demo accounts get saves — a demo viewer never sees other users'
+    // wishlists, so seeding 140 users' worth is wasted space.
+    for (const user of users.slice(0, 3)) {
+        const count = faker.number.int({ min: 10, max: 18 })
         // Filter out own gigs (a user can save their own, but it's noise)
         const candidates = activeGigs.filter((g) => g.sellerId !== user.id)
         const picks = pickN(candidates, Math.min(count, candidates.length))
@@ -588,6 +590,29 @@ async function seedSavedGigs(users: SeededUser[], gigs: SeededGig[]): Promise<vo
         savedCount += picks.length
     }
     console.log(`  ✓ ${savedCount} saves created`)
+}
+
+// Profile portfolios — give ~60% of sellers a few showcase images so profile
+// pages aren't empty. imageKey stores a full URL, same as gig images.
+async function seedPortfolioItems(gigs: SeededGig[]): Promise<void> {
+    console.log('  → seeding portfolio items…')
+    const sellerIds = Array.from(new Set(gigs.map((g) => g.sellerId)))
+    const rows: Array<{ userId: string; imageKey: string; width: number; height: number; position: number }> = []
+    for (const sellerId of sellerIds) {
+        if (faker.number.float({ min: 0, max: 1 }) > 0.6) continue
+        const count = faker.number.int({ min: 3, max: 8 })
+        for (let i = 0; i < count; i++) {
+            rows.push({
+                userId: sellerId,
+                imageKey: unsplashImage('portfolio', `${sellerId}-${i}`),
+                width: 800,
+                height: 600,
+                position: i
+            })
+        }
+    }
+    if (rows.length > 0) await prisma.portfolioItem.createMany({ data: rows })
+    console.log(`  ✓ ${rows.length} portfolio items seeded`)
 }
 
 // ── 5. Wallet transactions + withdrawals (Feature 07 + 13) ─────────────────
@@ -768,167 +793,99 @@ async function seedWalletExtras(users: SeededUser[]): Promise<void> {
 }
 
 // ── 6. Messaging (Feature 08) ──────────────────────────────────────────────
+// Demo messaging is derived from orders (threads + system events tagged with
+// orderId), not random peer chatter — see seedOrderConversation below.
 
-const MESSAGE_BODIES = [
-    'Hey! I saw your gig — can you help me?',
-    'Sure! What kind of project are you working on?',
-    "I'd need this done by next week. Possible?",
-    'Yeah totally, that timeline works for me.',
-    'Awesome, just placed the order!',
-    'Got it, will start tonight.',
-    'Quick question — what file format do you need?',
-    'PDF is fine, but PNG works too if you have it.',
-    'Sounds good, talk soon!',
-    'Just sent over the first draft, let me know what you think.',
-    'Looks great. Could you adjust the color palette?',
-    "Sure, I'll send v2 in a bit.",
-    'Thanks for the quick turnaround!',
-    'Anytime, looking forward to working with you again.',
-    'Hey, do you have availability next month?',
-    'Yes! Pencil me in for the 15th.'
+// Delivery handoff notes (seller → buyer) for delivered/completed orders.
+const DELIVERY_NOTES = [
+    "Here's the finished work — let me know if anything needs adjusting and I'll revise.",
+    'All done! Files are attached. I included a short note on how to use them.',
+    'Delivered as agreed. Happy to make small tweaks within scope if needed.',
+    'Final version attached. Thanks for the clear brief — it made this easy.'
 ]
 
-const SAMPLE_IMAGE_KEYS = [
-    'picsum:https://picsum.photos/seed/chat-doc-1/600/400',
-    'picsum:https://picsum.photos/seed/chat-doc-2/600/400',
-    'picsum:https://picsum.photos/seed/chat-doc-3/600/400',
-    'picsum:https://picsum.photos/seed/chat-doc-4/600/400'
+// Short, order-scoped buyer/seller exchange (tagged with orderId so it shows in
+// the Order Workspace + admin dispute view).
+const ORDER_CHAT_BUYER = [
+    'Hi! Just placed the order — here are a couple of details to get started.',
+    'Thanks for accepting. Roughly how long do you think this will take?',
+    'Looks good so far. Could you tweak one small thing?',
+    'Perfect, that works for me. Appreciate the quick turnaround!'
+]
+const ORDER_CHAT_SELLER = [
+    'Thanks for the order! I have everything I need and will get started today.',
+    'On it — I should have a first version over within the delivery window.',
+    'Sure, no problem. Sending an updated version shortly.',
+    'Glad you like it! Let me know if anything else comes up.'
 ]
 
-async function seedMessages(users: SeededUser[]): Promise<void> {
-    console.log('  → seeding message threads + messages…')
+// Order-scoped dispute exchange — the back-and-forth an admin reads on the case.
+const DISPUTE_CHAT_BUYER = [
+    'This is not what we agreed on — several requirements from the brief are missing.',
+    "I've asked for fixes a few times now but the delivery still doesn't match the order.",
+    "I don't think this is acceptable. I'm going to open a dispute so a moderator can review."
+]
+const DISPUTE_CHAT_SELLER = [
+    'I delivered exactly what was in the original order. The extra changes are out of scope.',
+    "I'm happy to do agreed revisions, but what you're asking for now is a different job.",
+    'I stand by the work I delivered — it matches the brief we agreed on.'
+]
 
-    let threadCount = 0
-    let messageCount = 0
-    let attachmentCount = 0
-    let unreadCount = 0
+// Heavy rating spread: how many reviews (= completed historical orders) per active gig.
+const HIST_REVIEW_COUNT_DIST: ReadonlyArray<{ value: { min: number; max: number }; weight: number }> = [
+    { value: { min: 0, max: 0 }, weight: 0.1 }, // ~10% stay "New seller"
+    { value: { min: 1, max: 2 }, weight: 0.42 },
+    { value: { min: 3, max: 5 }, weight: 0.3 },
+    { value: { min: 6, max: 9 }, weight: 0.13 },
+    { value: { min: 10, max: 16 }, weight: 0.05 } // a few standouts
+]
 
-    // Pick 3-7 peers per user (within seeded population). Normalize pair to
-    // (userAId < userBId) so the unique index doesn't reject a duplicate.
-    const createdPairs = new Set<string>()
-    const now = Date.now()
+const sysBody = (type: string, text: string, extra: Record<string, unknown> = {}): string =>
+    JSON.stringify({ type, payload: { text, ...extra } })
 
-    // First 3 seeded users serve as "demo accounts" — their threads have a
-    // chance of carrying unread messages so the badge shows something
-    // interesting after seed runs.
-    const demoUserIds = new Set(users.slice(0, 3).map((u) => u.id))
-
-    for (const user of users) {
-        const peerCount = faker.number.int({ min: 3, max: 7 })
-        const peers = faker.helpers.arrayElements(
-            users.filter((u) => u.id !== user.id),
-            peerCount
-        )
-
-        for (const peer of peers) {
-            const [a, b] = user.id < peer.id ? [user, peer] : [peer, user]
-            const key = `${a.id}:${b.id}`
-            if (createdPairs.has(key)) continue
-            createdPairs.add(key)
-
-            const messageCountInThread = faker.number.int({ min: 5, max: 15 })
-            const messages: Array<{
-                body: string
-                senderId: string
-                createdAt: Date
-                attachments: Array<{ key: string; name: string; size: number; mime: string }>
-            }> = []
-
-            // Walk backwards from "now" so the first message in the array is
-            // the OLDEST. We'll insert in order and set lastMessageAt to the
-            // latest.
-            let cursor = now - faker.number.int({ min: 60_000, max: 14 * 24 * 3600_000 })
-            for (let i = 0; i < messageCountInThread; i++) {
-                const sender = faker.helpers.arrayElement([a, b])
-                const body = faker.helpers.arrayElement(MESSAGE_BODIES)
-                cursor += faker.number.int({ min: 30_000, max: 3 * 3600_000 })
-                const hasAttachment = faker.number.float({ min: 0, max: 1 }) < 0.18
-                const attachments = hasAttachment
-                    ? [
-                          {
-                              key: faker.helpers.arrayElement(SAMPLE_IMAGE_KEYS),
-                              name: `attachment-${faker.string.alphanumeric(6)}.jpg`,
-                              size: faker.number.int({ min: 50_000, max: 800_000 }),
-                              mime: 'image/jpeg'
-                          }
-                      ]
-                    : []
-                messages.push({
-                    body,
-                    senderId: sender.id,
-                    createdAt: new Date(cursor),
-                    attachments
-                })
-            }
-
-            // Create the thread.
-            const thread = await prisma.messageThread.create({
-                data: {
-                    userAId: a.id,
-                    userBId: b.id,
-                    lastMessageAt: messages[messages.length - 1].createdAt
-                }
-            })
-            threadCount++
-
-            // Insert messages + attachments in chronological order.
-            for (const m of messages) {
-                const created = await prisma.message.create({
-                    data: {
-                        threadId: thread.id,
-                        senderId: m.senderId,
-                        body: m.body,
-                        createdAt: m.createdAt
-                    }
-                })
-                messageCount++
-                for (const att of m.attachments) {
-                    await prisma.messageAttachment.create({
-                        data: {
-                            messageId: created.id,
-                            key: att.key,
-                            name: att.name,
-                            size: att.size,
-                            mime: att.mime,
-                            createdAt: m.createdAt
-                        }
-                    })
-                    attachmentCount++
-                }
-            }
-
-            // Read cursors: by default both sides have seen everything (so
-            // unread counts stay 0). For threads touching a demo account,
-            // leave a chance of unread messages from the OTHER party.
-            const demoSide = demoUserIds.has(a.id) ? a.id : demoUserIds.has(b.id) ? b.id : null
-            const isUnreadThread = demoSide && faker.number.float({ min: 0, max: 1 }) < 0.4
-
-            const latestMessage = messages[messages.length - 1]
-            const cutoffForDemo = isUnreadThread
-                ? messages[Math.max(0, messages.length - 3)].createdAt
-                : latestMessage.createdAt
-
-            for (const userId of [a.id, b.id]) {
-                const isThisDemo = isUnreadThread && userId === demoSide
-                const myCutoff = isThisDemo ? cutoffForDemo : latestMessage.createdAt
-                await prisma.messageReadCursor.create({
-                    data: {
-                        threadId: thread.id,
-                        userId,
-                        lastReadAt: myCutoff
-                    }
-                })
-                if (isThisDemo) {
-                    const unreadMsgs = messages.filter((m) => m.senderId !== userId && m.createdAt > myCutoff)
-                    unreadCount += unreadMsgs.length
-                }
-            }
-        }
+// One MessageThread per (userA,userB) pair, reused across a run. Created lazily.
+const seedThreadCache = new Map<string, string>()
+async function getOrCreateThreadId(u1: string, u2: string, lastMessageAt: Date): Promise<string> {
+    const [a, b] = u1 < u2 ? [u1, u2] : [u2, u1]
+    const key = `${a}:${b}`
+    const cached = seedThreadCache.get(key)
+    if (cached) {
+        await prisma.messageThread.update({ where: { id: cached }, data: { lastMessageAt } })
+        return cached
     }
+    const thread = await prisma.messageThread.create({ data: { userAId: a, userBId: b, lastMessageAt } })
+    seedThreadCache.set(key, thread.id)
+    return thread.id
+}
 
-    console.log(
-        `  ✓ ${threadCount} threads, ${messageCount} messages, ${attachmentCount} attachments (${unreadCount} unread for demo accounts)`
-    )
+// Inserts an order-scoped conversation into the buyer↔seller thread and marks
+// both sides read. `msgs` entries: { fromBuyer, body|systemText, at }.
+async function seedOrderConversation(
+    buyerId: string,
+    sellerId: string,
+    orderId: string,
+    msgs: Array<{ fromBuyer?: boolean; body?: string; systemText?: string; systemType?: string; at: Date }>
+): Promise<void> {
+    if (msgs.length === 0) return
+    const lastAt = msgs[msgs.length - 1].at
+    const threadId = await getOrCreateThreadId(buyerId, sellerId, lastAt)
+    await prisma.message.createMany({
+        data: msgs.map((m) => ({
+            threadId,
+            orderId,
+            senderId: m.systemText ? null : m.fromBuyer ? buyerId : sellerId,
+            body: m.systemText ? sysBody(m.systemType ?? 'order_event', m.systemText) : (m.body ?? ''),
+            createdAt: m.at
+        }))
+    })
+    // Both participants have read everything (keeps inbox unread counts sane).
+    for (const userId of [buyerId, sellerId]) {
+        await prisma.messageReadCursor.upsert({
+            where: { threadId_userId: { threadId, userId } },
+            create: { threadId, userId, lastReadAt: lastAt },
+            update: { lastReadAt: lastAt }
+        })
+    }
 }
 
 // ── Orders + transitions (Phase 1 + Phase 2 mix) ──────────────────────────
@@ -1109,6 +1066,55 @@ async function seedGigViews(gigs: SeededGig[]): Promise<void> {
 const DISPUTE_PLATFORM_USER_ID = '00000000-0000-0000-0000-000000000001'
 const HOUR = 60 * 60 * 1000
 
+// Layers a disputed order with the data an admin actually reviews: an order-tagged
+// chat showing the disagreement + evidence files per side. (Deliverables already
+// exist from seedOneOrder for delivered-state orders.)
+async function seedDisputeExtras(opts: {
+    orderId: string
+    buyerId: string
+    sellerId: string
+    filerRole: 'Buyer' | 'Seller'
+    responded: boolean
+    filedAt: Date
+    disputeId: string
+}): Promise<void> {
+    const { orderId, buyerId, sellerId, filerRole, responded, filedAt, disputeId } = opts
+    const filerIsBuyer = filerRole === 'Buyer'
+
+    const t0 = new Date(filedAt.getTime() - 6 * HOUR_MS)
+    await seedOrderConversation(buyerId, sellerId, orderId, [
+        { fromBuyer: filerIsBuyer, body: pick(filerIsBuyer ? DISPUTE_CHAT_BUYER : DISPUTE_CHAT_SELLER), at: t0 },
+        {
+            fromBuyer: !filerIsBuyer,
+            body: pick(filerIsBuyer ? DISPUTE_CHAT_SELLER : DISPUTE_CHAT_BUYER),
+            at: new Date(t0.getTime() + 2 * HOUR_MS)
+        },
+        { systemText: 'Dispute filed — order frozen for review', systemType: 'dispute_filed', at: filedAt }
+    ])
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const evidence: any[] = []
+    const addEvidence = (side: 'Buyer' | 'Seller', uploaderId: string): void => {
+        const n = faker.number.int({ min: 1, max: 2 })
+        for (let k = 0; k < n; k++) {
+            evidence.push({
+                disputeId,
+                orderId,
+                side,
+                uploadedByUserId: uploaderId,
+                fileKey: unsplashImage('evidence', `${orderId}-${side}-${k}`),
+                name: `evidence-${side.toLowerCase()}-${k + 1}.jpg`,
+                size: faker.number.int({ min: 60_000, max: 900_000 }),
+                mime: 'image/jpeg',
+                createdAt: new Date(filedAt.getTime() + k * 60_000)
+            })
+        }
+    }
+    addEvidence(filerRole, filerIsBuyer ? buyerId : sellerId)
+    if (responded) addEvidence(filerIsBuyer ? 'Seller' : 'Buyer', filerIsBuyer ? sellerId : buyerId)
+    if (evidence.length > 0) await prisma.disputeEvidence.createMany({ data: evidence })
+}
+
 async function seedDisputes(users: SeededUser[]): Promise<void> {
     console.log('  → creating disputes…')
     const demoBuyerIds = users.slice(0, 3).map((u) => u.id)
@@ -1154,8 +1160,13 @@ async function seedDisputes(users: SeededUser[]): Promise<void> {
             payload: { number: order.number, role: s.role, reasonCode: s.reason }
         }
 
+        const responded = s.kind !== 'awaiting'
+        let disputeId = ''
+        let filedAt = new Date(now)
+
         if (s.kind === 'awaiting') {
-            await prisma.$transaction([
+            filedAt = new Date(now - (48 - s.deadlineH) * HOUR)
+            const r = await prisma.$transaction([
                 prisma.dispute.create({
                     data: {
                         orderId: order.id,
@@ -1165,14 +1176,16 @@ async function seedDisputes(users: SeededUser[]): Promise<void> {
                         filerStatement,
                         status: 'AwaitingResponse',
                         responseDeadline: new Date(now + s.deadlineH * HOUR),
-                        filedAt: new Date(now - (48 - s.deadlineH) * HOUR)
+                        filedAt
                     }
                 }),
                 prisma.order.update({ where: { id: order.id }, data: { status: 'Frozen' } }),
                 prisma.orderEvent.create({ data: filedEvent })
             ])
+            disputeId = (r[0] as { id: string }).id
         } else if (s.kind === 'ready') {
-            await prisma.$transaction([
+            filedAt = new Date(now - 18 * HOUR)
+            const r = await prisma.$transaction([
                 prisma.dispute.create({
                     data: {
                         orderId: order.id,
@@ -1184,15 +1197,17 @@ async function seedDisputes(users: SeededUser[]): Promise<void> {
                         responderStatement,
                         status: 'ReadyForReview',
                         responseDeadline: new Date(now + 30 * HOUR),
-                        filedAt: new Date(now - 18 * HOUR)
+                        filedAt
                     }
                 }),
                 prisma.order.update({ where: { id: order.id }, data: { status: 'Frozen' } }),
                 prisma.orderEvent.create({ data: filedEvent })
             ])
+            disputeId = (r[0] as { id: string }).id
         } else {
+            filedAt = new Date(now - 72 * HOUR)
             const terminal = s.verdict === 'RefundBuyer' ? 'Cancelled' : 'Completed'
-            await prisma.$transaction([
+            const r = await prisma.$transaction([
                 prisma.dispute.create({
                     data: {
                         orderId: order.id,
@@ -1208,7 +1223,7 @@ async function seedDisputes(users: SeededUser[]): Promise<void> {
                         buyerRefundPercent: s.verdict === 'SplitFunds' ? s.buyerRefundPercent : null,
                         resolvedByUserId: DISPUTE_PLATFORM_USER_ID,
                         resolvedAt: new Date(now - 12 * HOUR),
-                        filedAt: new Date(now - 72 * HOUR)
+                        filedAt
                     }
                 }),
                 prisma.order.update({
@@ -1233,7 +1248,18 @@ async function seedDisputes(users: SeededUser[]): Promise<void> {
                     }
                 })
             ])
+            disputeId = (r[0] as { id: string }).id
         }
+
+        await seedDisputeExtras({
+            orderId: order.id,
+            buyerId: order.buyerId,
+            sellerId: order.sellerId,
+            filerRole: s.role,
+            responded,
+            filedAt,
+            disputeId
+        })
         made++
     }
 
@@ -1620,7 +1646,191 @@ async function seedOneOrder(
         })
     }
 
+    // Delivery handoff — only orders that reached a delivered state get a
+    // Delivery + files, so the workspace (and admin dispute view) has content.
+    const hasDelivery = ['delivered', 'delivered-pending-extension', 'awaiting-finalization', 'completed'].includes(
+        kind
+    )
+    const deliveredAt = params.deliveredAt
+    if (hasDelivery && deliveredAt) {
+        const delivery = await prisma.delivery.create({
+            data: { orderId: order.id, version: 1, note: pick(DELIVERY_NOTES), deliveredAt }
+        })
+        const fileCount = faker.number.int({ min: 1, max: 2 })
+        await prisma.deliveryFile.createMany({
+            data: Array.from({ length: fileCount }, (_, i) => ({
+                deliveryId: delivery.id,
+                key: unsplashImage('delivery', `${order.id}-${i}`),
+                name: `deliverable-${i + 1}.jpg`,
+                size: faker.number.int({ min: 80_000, max: 1_200_000 }),
+                mime: 'image/jpeg',
+                createdAt: deliveredAt
+            }))
+        })
+    }
+
+    // Order-scoped conversation — populates the demo inbox, the order workspace,
+    // and (for disputed orders) the admin dispute chat. All tagged with orderId.
+    const conv: Array<{ fromBuyer?: boolean; body?: string; systemText?: string; systemType?: string; at: Date }> = [
+        { systemText: `Order placed — ${gig.title}`, systemType: 'order_placed', at: params.placedAt },
+        { fromBuyer: true, body: pick(ORDER_CHAT_BUYER), at: new Date(params.placedAt.getTime() + 20 * 60_000) }
+    ]
+    if (params.acceptedAt) conv.push({ fromBuyer: false, body: pick(ORDER_CHAT_SELLER), at: params.acceptedAt })
+    if (hasDelivery && params.deliveredAt) {
+        conv.push({ fromBuyer: false, body: pick(DELIVERY_NOTES), at: params.deliveredAt })
+        conv.push({
+            systemText: 'Files delivered',
+            systemType: 'order_delivered',
+            at: new Date(params.deliveredAt.getTime() + 60_000)
+        })
+    }
+    if (params.status === 'Completed' && params.completedAt) {
+        conv.push({
+            systemText: 'Order completed — funds released',
+            systemType: 'order_completed',
+            at: params.completedAt
+        })
+    }
+    await seedOrderConversation(buyer.id, gig.sellerId, order.id, conv)
+
     return { extensions, cancellations }
+}
+
+// Chunked createMany — keeps Postgres parameter counts well under the limit.
+async function insertChunked<T>(rows: T[], create: (chunk: T[]) => Promise<unknown>, size = 500): Promise<void> {
+    for (let i = 0; i < rows.length; i += size) await create(rows.slice(i, i + size))
+}
+
+// The rating backbone: a large layer of historical Completed orders among seeded
+// users so most active gigs carry real ratings + completed-order counts. Reviews
+// drive avgRating; the full Payment/Earning/PlatformFee trail feeds the seller
+// earnings + admin revenue dashboards. No deliveries/chat here — these are never
+// opened in a demo. Aggregates are recomputed afterward (recomputeAggregates).
+async function seedHistoricalOrders(users: SeededUser[]): Promise<void> {
+    console.log('  → seeding historical completed orders + reviews (rating backbone)…')
+    const activeGigs = await prisma.gig.findMany({
+        where: { status: 'Active' },
+        select: { id: true, sellerId: true, priceVnd: true, deliveryDays: true, title: true }
+    })
+    if (activeGigs.length === 0 || users.length < 2) return
+
+    const now = Date.now()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const orders: any[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const txns: any[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const reviews: any[] = []
+    const earningsBySeller = new Map<string, number>()
+    let platformTotal = 0
+    let reviewedGigs = 0
+
+    for (const gig of activeGigs) {
+        const n = faker.number.int(weightedPick(HIST_REVIEW_COUNT_DIST))
+        if (n === 0) continue
+        const buyerPool = users.filter((u) => u.id !== gig.sellerId)
+        if (buyerPool.length === 0) continue
+        reviewedGigs++
+
+        for (let i = 0; i < n; i++) {
+            const buyer = pick(buyerPool)
+            const orderId = faker.string.uuid()
+            // Spread completions across the last ~6 months so dashboard period filters show trends.
+            const completedAt = new Date(now - faker.number.int({ min: 2, max: 175 }) * DAY_MS)
+            const placedAt = new Date(
+                completedAt.getTime() - (gig.deliveryDays + faker.number.int({ min: 1, max: 4 })) * DAY_MS
+            )
+            const acceptedAt = new Date(placedAt.getTime() + faker.number.int({ min: 1, max: 12 }) * HOUR_MS)
+            const deliveredAt = new Date(completedAt.getTime() - faker.number.int({ min: 2, max: 36 }) * HOUR_MS)
+            const platformShare = Math.floor((gig.priceVnd * SEED_PLATFORM_FEE_PCT) / 100)
+            const sellerShare = gig.priceVnd - platformShare
+
+            orders.push({
+                id: orderId,
+                buyerId: buyer.id,
+                sellerId: gig.sellerId,
+                gigId: gig.id,
+                gigTitleSnapshot: gig.title,
+                gigPriceVndSnapshot: gig.priceVnd,
+                gigDeliveryDays: gig.deliveryDays,
+                gigCoverKey: null,
+                status: 'Completed',
+                placedAt,
+                acceptedAt,
+                deliveredAt,
+                completedAt,
+                reviewDeadline: new Date(deliveredAt.getTime() + 72 * HOUR_MS)
+            })
+            txns.push(
+                {
+                    userId: buyer.id,
+                    type: 'Payment',
+                    direction: 'Outgoing',
+                    status: 'Completed',
+                    amountVnd: gig.priceVnd,
+                    balanceAfterVnd: null,
+                    orderId,
+                    description: `Held in escrow for order ${orderId}`,
+                    createdAt: placedAt
+                },
+                {
+                    userId: gig.sellerId,
+                    type: 'Earning',
+                    direction: 'Incoming',
+                    status: 'Completed',
+                    amountVnd: sellerShare,
+                    balanceAfterVnd: null,
+                    orderId,
+                    description: `Earned from order ${orderId}`,
+                    createdAt: completedAt
+                },
+                {
+                    userId: PLATFORM_USER_ID,
+                    type: 'Earning',
+                    direction: 'Incoming',
+                    status: 'Completed',
+                    amountVnd: platformShare,
+                    balanceAfterVnd: null,
+                    orderId,
+                    description: `Platform fee from order ${orderId}`,
+                    createdAt: completedAt
+                }
+            )
+            const rating = pickRatingHalfStars()
+            const replied = faker.number.float({ min: 0, max: 1 }) < 0.4
+            const reviewedAt = new Date(completedAt.getTime() + faker.number.int({ min: 2, max: 48 }) * HOUR_MS)
+            reviews.push({
+                orderId,
+                gigId: gig.id,
+                sellerId: gig.sellerId,
+                buyerId: buyer.id,
+                ratingHalfStars: rating,
+                body: pick(rating >= 8 ? REVIEW_BODIES_POSITIVE : REVIEW_BODIES_MIXED),
+                replyBody: replied ? pick(REVIEW_REPLIES) : null,
+                repliedAt: replied ? new Date(reviewedAt.getTime() + 12 * HOUR_MS) : null,
+                createdAt: reviewedAt
+            })
+            earningsBySeller.set(gig.sellerId, (earningsBySeller.get(gig.sellerId) ?? 0) + sellerShare)
+            platformTotal += platformShare
+        }
+    }
+
+    await insertChunked(orders, (c) => prisma.order.createMany({ data: c }))
+    await insertChunked(txns, (c) => prisma.transaction.createMany({ data: c }))
+    await insertChunked(reviews, (c) => prisma.review.createMany({ data: c }))
+
+    for (const [sellerId, amt] of earningsBySeller) {
+        await prisma.user.update({ where: { id: sellerId }, data: { walletBalance: { increment: amt } } })
+    }
+    if (platformTotal > 0) {
+        await prisma.user.update({
+            where: { id: PLATFORM_USER_ID },
+            data: { walletBalance: { increment: platformTotal } }
+        })
+    }
+    console.log(
+        `  ✓ ${orders.length} historical orders + reviews across ${reviewedGigs}/${activeGigs.length} active gigs`
+    )
 }
 
 // ── F14: Admin user + activity backfill + report exports ────────────────────
@@ -2085,37 +2295,59 @@ async function seedPlatformUser(): Promise<void> {
             username: '__platform__',
             displayName: 'CampusGig Platform',
             isAdmin: false,
-            hasSetUsername: true
+            hasSetUsername: true,
+            walletBalance: 0
         },
         // Idempotent backfill: existing rows from before the sentinel landed
-        // get patched on the next seed pass. Safe — the platform row is
-        // system-owned, no real user can edit it.
+        // get patched on the next seed pass. Reset the balance to 0 too — the
+        // platform row survives SEED_FORCE (system-owned), so historical fee
+        // increments would otherwise accumulate across re-seeds.
         update: {
-            username: '__platform__'
+            username: '__platform__',
+            walletBalance: 0
         }
     })
 }
 
 // Recompute the denormalized Browse-sort counters once, after orders + reviews exist.
-async function finalizeGigCounters(): Promise<void> {
-    console.log('  → finalizing gig sort counters…')
-    const gigs = await prisma.gig.findMany({ select: { id: true, reviewCount: true, ratingSumHalfStars: true } })
-    const completed = await prisma.order.groupBy({
-        by: ['gigId'],
-        where: { status: 'Completed' },
-        _count: { _all: true }
-    })
-    const completedById = new Map(completed.map((c) => [c.gigId, c._count._all]))
+// Recompute every denormalized aggregate from the source rows, after all orders
+// + reviews exist. Authoritative — supersedes any inline increments, so the bulk
+// historical layer and the demo orders stay perfectly consistent.
+async function recomputeAggregates(): Promise<void> {
+    console.log('  → recomputing review + order aggregates…')
+
+    const [gigReviews, sellerReviews, completed] = await Promise.all([
+        prisma.review.groupBy({ by: ['gigId'], _count: { _all: true }, _sum: { ratingHalfStars: true } }),
+        prisma.review.groupBy({ by: ['sellerId'], _count: { _all: true }, _sum: { ratingHalfStars: true } }),
+        prisma.order.groupBy({ by: ['gigId'], where: { status: 'Completed' }, _count: { _all: true } })
+    ])
+    const reviewByGig = new Map(
+        gigReviews.map((g) => [g.gigId, { count: g._count._all, sum: g._sum.ratingHalfStars ?? 0 }])
+    )
+    const completedByGig = new Map(completed.map((c) => [c.gigId, c._count._all]))
+
+    const gigs = await prisma.gig.findMany({ select: { id: true } })
     for (const g of gigs) {
+        const rv = reviewByGig.get(g.id) ?? { count: 0, sum: 0 }
         await prisma.gig.update({
             where: { id: g.id },
             data: {
-                avgRating: g.reviewCount > 0 ? g.ratingSumHalfStars / 2 / g.reviewCount : 0,
-                completedOrderCount: completedById.get(g.id) ?? 0
+                reviewCount: rv.count,
+                ratingSumHalfStars: rv.sum,
+                avgRating: rv.count > 0 ? rv.sum / 2 / rv.count : 0,
+                completedOrderCount: completedByGig.get(g.id) ?? 0
             }
         })
     }
-    console.log(`  ✓ ${gigs.length} gig counters finalized`)
+
+    // Seller review aggregates (sellers with 0 reviews keep their default 0 from create).
+    for (const u of sellerReviews) {
+        await prisma.user.update({
+            where: { id: u.sellerId },
+            data: { reviewCount: u._count._all, ratingSumHalfStars: u._sum.ratingHalfStars ?? 0 }
+        })
+    }
+    console.log(`  ✓ aggregates recomputed for ${gigs.length} gigs + ${sellerReviews.length} sellers`)
 }
 
 async function main(): Promise<void> {
@@ -2145,12 +2377,13 @@ async function main(): Promise<void> {
     })
     const gigs = await seedGigs(users, categoryIds)
     await seedSavedGigs(users, gigs)
+    await seedPortfolioItems(gigs)
     await seedWalletExtras(users)
-    await seedMessages(users)
     await seedOrders(users)
+    await seedHistoricalOrders(users)
     await seedGigViews(gigs)
     await seedDisputes(users)
-    await finalizeGigCounters()
+    await recomputeAggregates()
     await seedAdminActivity(adminId)
     await seedAdminExtras(adminId)
     await seedNotifications(users, adminId)

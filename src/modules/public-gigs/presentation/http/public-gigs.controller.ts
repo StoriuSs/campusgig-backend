@@ -94,23 +94,6 @@ export class PublicGigsController {
         // New sellers and a rating threshold are mutually exclusive; "new" wins.
         const parsedMinRating = !parsedNewSellersOnly && minRating ? Number.parseFloat(minRating) : undefined
 
-        // Cache key is anonymous — never includes userId.
-        // isSaved is injected live after cache lookup so it's always fresh.
-        const cacheKey = `gigs:public:browse:${JSON.stringify({
-            q,
-            categoryId,
-            minPrice: parsedMinPrice,
-            maxPrice: parsedMaxPrice,
-            minRating: parsedMinRating,
-            newSellersOnly: parsedNewSellersOnly,
-            maxDelivery: parsedMaxDelivery,
-            endorsedOnly: parsedEndorsedOnly,
-            sellerId,
-            sort,
-            page: parsedPage,
-            pageSize: parsedPageSize
-        })}`
-
         const validSort =
             sort === 'priceAsc'
                 ? ('priceAsc' as const)
@@ -121,6 +104,25 @@ export class PublicGigsController {
                     : sort === 'mostCompletedOrders'
                       ? ('mostCompletedOrders' as const)
                       : ('newest' as const)
+
+        // Cache key is anonymous — never includes userId.
+        // isSaved is injected live after cache lookup so it's always fresh.
+        // Key on the normalized sort so unknown raw values don't fragment the cache.
+        const cacheKey = `gigs:public:browse:${JSON.stringify({
+            q,
+            categoryId,
+            minPrice: parsedMinPrice,
+            maxPrice: parsedMaxPrice,
+            minRating: parsedMinRating,
+            newSellersOnly: parsedNewSellersOnly,
+            maxDelivery: parsedMaxDelivery,
+            endorsedOnly: parsedEndorsedOnly,
+            sellerId,
+            sort: validSort,
+            page: parsedPage,
+            pageSize: parsedPageSize
+        })}`
+
         const cached = await this.cache.get<BrowseGigsResult>(cacheKey)
         const result: BrowseGigsResult =
             cached ??

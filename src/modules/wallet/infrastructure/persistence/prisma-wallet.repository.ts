@@ -406,19 +406,20 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
                 where: { id: withdrawalId }
             })
             if (!request) throw new BadRequestException('Withdrawal not found')
+            if (request.status !== 'Pending') throw new BadRequestException('Withdrawal already processed')
+
+            // Atomic guard: flip Pending→Completed in one statement. A racing approve/reject
+            // re-evaluates the predicate after locking the row and matches 0 rows, so the
+            // balance moves below run exactly once.
+            const guard = await tx.withdrawalRequest.updateMany({
+                where: { id: withdrawalId, status: 'Pending' },
+                data: { status: 'Completed', processedAt: new Date(), processedByUserId: adminId }
+            })
+            if (guard.count === 0) throw new BadRequestException('Withdrawal already processed')
 
             await tx.user.update({
                 where: { id: request.userId },
                 data: { pendingWithdrawalBalance: { decrement: request.amountVnd } }
-            })
-
-            const updated = await tx.withdrawalRequest.update({
-                where: { id: withdrawalId },
-                data: {
-                    status: 'Completed',
-                    processedAt: new Date(),
-                    processedByUserId: adminId
-                }
             })
 
             await tx.transaction.updateMany({
@@ -429,6 +430,7 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
                 }
             })
 
+            const updated = await tx.withdrawalRequest.findUnique({ where: { id: withdrawalId } })
             const user = await tx.user.findUnique({
                 where: { id: request.userId },
                 select: {
@@ -443,7 +445,7 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
                 }
             })
 
-            return this.toRequest(updated, user!)
+            return this.toRequest(updated!, user!)
         })
     }
 
@@ -458,6 +460,21 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
                 where: { id: withdrawalId }
             })
             if (!request) throw new BadRequestException('Withdrawal not found')
+            if (request.status !== 'Pending') throw new BadRequestException('Withdrawal already processed')
+
+            // Atomic guard (see approveWithdrawal) — only one transition wins, so the
+            // refund below can never be applied twice.
+            const guard = await tx.withdrawalRequest.updateMany({
+                where: { id: withdrawalId, status: 'Pending' },
+                data: {
+                    status: 'Rejected',
+                    rejectionReason: reason,
+                    rejectionNote: note,
+                    processedAt: new Date(),
+                    processedByUserId: adminId
+                }
+            })
+            if (guard.count === 0) throw new BadRequestException('Withdrawal already processed')
 
             // Restore the held amount back to walletBalance.
             const restoredUser = await tx.user.update({
@@ -469,16 +486,7 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
                 select: { walletBalance: true }
             })
 
-            const updated = await tx.withdrawalRequest.update({
-                where: { id: withdrawalId },
-                data: {
-                    status: 'Rejected',
-                    rejectionReason: reason,
-                    rejectionNote: note,
-                    processedAt: new Date(),
-                    processedByUserId: adminId
-                }
-            })
+            const updated = await tx.withdrawalRequest.findUnique({ where: { id: withdrawalId } })
 
             // Overwrite balanceAfterVnd to reflect the rejection outcome
             // (money was restored — balance is back to its pre-request value).
@@ -505,7 +513,7 @@ export class PrismaWalletRepository implements WalletRepositoryPort {
                 }
             })
 
-            return this.toRequest(updated, user!)
+            return this.toRequest(updated!, user!)
         })
     }
 
