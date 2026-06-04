@@ -97,6 +97,11 @@ export const MESSAGES = {
         DELETED: 'Category deleted successfully'
     },
 
+    // Public landing stats
+    STATS: {
+        FETCHED: 'Platform stats retrieved successfully'
+    },
+
     // Gig messages (Feature 04)
     GIG: {
         LIST_FETCHED: 'Gigs retrieved successfully',
