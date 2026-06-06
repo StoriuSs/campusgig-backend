@@ -2350,6 +2350,17 @@ async function recomputeAggregates(): Promise<void> {
     console.log(`  ✓ aggregates recomputed for ${gigs.length} gigs + ${sellerReviews.length} sellers`)
 }
 
+// Seeding ~900 orders with autoincrement `number` can leave the Postgres
+// sequence behind MAX(number). The next real order placement would then reuse
+// an existing number and fail the unique constraint until the sequence catches
+// up. Re-point it past the highest seeded value so production never collides.
+async function resyncOrderNumberSequence(): Promise<void> {
+    await prisma.$executeRawUnsafe(
+        `SELECT setval(pg_get_serial_sequence('"Order"', 'number'), GREATEST((SELECT COALESCE(MAX(number), 0) FROM "Order"), 1))`
+    )
+    console.log('  ✓ Order.number sequence resynced')
+}
+
 async function main(): Promise<void> {
     console.log('🌱 CampusGig seed starting…')
     const start = Date.now()
@@ -2383,6 +2394,7 @@ async function main(): Promise<void> {
     await seedHistoricalOrders(users)
     await seedGigViews(gigs)
     await seedDisputes(users)
+    await resyncOrderNumberSequence()
     await recomputeAggregates()
     await seedAdminActivity(adminId)
     await seedAdminExtras(adminId)

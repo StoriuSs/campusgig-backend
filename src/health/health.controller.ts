@@ -8,6 +8,7 @@ import {
     DiskHealthIndicator
 } from '@nestjs/terminus'
 import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager'
+import { SkipThrottle } from '@nestjs/throttler'
 import { PrismaService } from '@/shared/infrastructure'
 import { Public } from '@/shared/presentation/decorators'
 import { RESPONSE_CODES, RESPONSE_TYPES } from '@/shared/constants'
@@ -54,6 +55,7 @@ export class RedisHealthIndicator extends HealthIndicator {
     }
 }
 
+@SkipThrottle()
 @Controller('health')
 export class HealthController {
     constructor(

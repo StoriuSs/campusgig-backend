@@ -114,7 +114,7 @@ services:
       - "--maxmemory"
       - "256mb"
       - "--maxmemory-policy"
-      - "allkeys-lru"      # Evict least-recently-used keys when memory is full
+      - "noeviction"       # BullMQ requires noeviction — evicting keys corrupts job/queue data
     volumes:
       - redis-data:/data   # Persist AOF + RDB snapshots
     ports:

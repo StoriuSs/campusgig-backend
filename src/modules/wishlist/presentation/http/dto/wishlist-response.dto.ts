@@ -1,5 +1,5 @@
 import { Exclude, Expose, Type } from 'class-transformer'
-import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min, ValidateNested } from 'class-validator'
+import { IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator'
 
 @Exclude()
 export class WishlistGigSellerDto {
@@ -17,6 +17,8 @@ export class WishlistGigItemDto {
     @Expose() @IsInt() priceVnd!: number
     @Expose() @IsInt() @Min(1) deliveryDays!: number
     @Expose() @IsOptional() @IsString() coverImageUrl!: string | null
+    @Expose() @IsOptional() @IsNumber() avgRating!: number | null
+    @Expose() @IsInt() @Min(0) reviewCount!: number
     @Expose() @IsString() savedAt!: string
     @Expose() @ValidateNested() @Type(() => WishlistGigSellerDto) seller!: WishlistGigSellerDto
 }

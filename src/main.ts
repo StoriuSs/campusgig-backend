@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core'
-import { HttpStatus, ValidationPipe } from '@nestjs/common'
+import { HttpStatus, ValidationPipe, Logger as NestLogger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { Logger } from 'nestjs-pino'
 import { NestExpressApplication } from '@nestjs/platform-express'
@@ -21,11 +21,30 @@ import { getQueueToken } from '@nestjs/bullmq'
 async function bootstrap() {
     const app = await NestFactory.create<NestExpressApplication>(AppModule)
 
+    // Behind Nginx (and Cloudflare). Trust the single reverse-proxy hop so
+    // `req.ip` resolves to the real client IP — the rate limiter keys on it,
+    // otherwise every anonymous request collapses into one bucket (Nginx's IP).
+    app.set('trust proxy', 1)
+
     // Get config service
     const configService = app.get(ConfigService)
 
     // Use Pino logger FIRST - this ensures proper log ordering
     app.useLogger(app.get(Logger))
+
+    // Safety net: never let a stray async error take the whole server down.
+    // A rejected promise (e.g. a best-effort email failing) would otherwise be
+    // fatal on Node, causing a silent restart and a burst of 502s. Log loudly
+    // and keep serving instead.
+    const processLogger = new NestLogger('Process')
+    process.on('unhandledRejection', (reason) => {
+        processLogger.error(
+            `Unhandled promise rejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`
+        )
+    })
+    process.on('uncaughtException', (err) => {
+        processLogger.error(`Uncaught exception: ${err.stack ?? err.message}`)
+    })
 
     // Enable URI versioning (e.g., /api/v1/users)
     app.enableVersioning({

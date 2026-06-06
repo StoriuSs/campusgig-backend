@@ -7,6 +7,10 @@ import {
     WishlistSort
 } from '../../domain/ports/wishlist.repository.port'
 
+function avgFromHalfStars(count: number, sumHalfStars: number): number | null {
+    return count > 0 ? sumHalfStars / 2 / count : null
+}
+
 @Injectable()
 export class PrismaWishlistRepository implements WishlistRepositoryPort {
     constructor(private readonly prisma: PrismaService) {}
@@ -71,6 +75,8 @@ export class PrismaWishlistRepository implements WishlistRepositoryPort {
                 priceVnd: row.gig.priceVnd,
                 deliveryDays: row.gig.deliveryDays,
                 coverImageKey: row.gig.images[0]?.imageKey ?? null,
+                avgRating: avgFromHalfStars(row.gig.reviewCount, row.gig.ratingSumHalfStars),
+                reviewCount: row.gig.reviewCount,
                 savedAt: row.savedAt,
                 seller: {
                     id: row.gig.sellerId,

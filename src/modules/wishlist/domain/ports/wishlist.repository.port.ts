@@ -14,6 +14,8 @@ export interface WishlistGigItem {
     priceVnd: number
     deliveryDays: number
     coverImageKey: string | null
+    avgRating: number | null
+    reviewCount: number
     savedAt: Date
     seller: WishlistGigSeller
 }

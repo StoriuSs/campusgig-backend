@@ -130,6 +130,8 @@ export class WishlistController {
             priceVnd: item.priceVnd,
             deliveryDays: item.deliveryDays,
             coverImageUrl,
+            avgRating: item.avgRating,
+            reviewCount: item.reviewCount,
             savedAt: item.savedAt instanceof Date ? item.savedAt.toISOString() : String(item.savedAt),
             seller
         })
