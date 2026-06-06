@@ -1,264 +1,317 @@
 <div align="center">
 
-# CampusGig Backend
+# CampusGig — Backend
 
-A production-ready backend for the CampusGig platform featuring Keycloak authentication, Prisma ORM, distributed caching, rate limiting, and more.
+API & real‑time backend for **CampusGig**, a Fiverr‑style gig marketplace scoped to a university. One account can be both **buyer** and **seller**; an **admin** role keeps the marketplace safe. Payments run through an **escrow** wallet (DB‑backed/simulated in v1 — no real gateway).
 
-[![Node.js](https://img.shields.io/badge/Node.js-≥20.0.0-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![NestJS](https://img.shields.io/badge/NestJS-10-E0234E?logo=nestjs&logoColor=white)](https://nestjs.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Prisma](https://img.shields.io/badge/Prisma-2D3748?logo=prisma&logoColor=white)](https://www.prisma.io/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white)](https://redis.io/)
-[![Keycloak](https://img.shields.io/badge/Keycloak-4D4D4D?logo=keycloak&logoColor=white)](https://www.keycloak.org/)
-[![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?logo=prometheus&logoColor=white)](https://prometheus.io/)
-[![Grafana](https://img.shields.io/badge/Grafana-F46800?logo=grafana&logoColor=white)](https://grafana.com/)
-[![Swagger](https://img.shields.io/badge/Swagger-85EA2D?logo=swagger&logoColor=black)](https://swagger.io/)
+[![Prisma](https://img.shields.io/badge/Prisma-7-2D3748?logo=prisma&logoColor=white)](https://www.prisma.io/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
+[![Keycloak](https://img.shields.io/badge/Keycloak-26-4D4D4D?logo=keycloak&logoColor=white)](https://www.keycloak.org/)
 
 </div>
 
+Built with **NestJS 10** in a **hexagonal (ports & adapters) + CQRS** style, **Prisma 7 + PostgreSQL**, **Keycloak** auth, **Redis + BullMQ** for caching and scheduled jobs, and **Socket.IO** for real‑time.
+
+
 ---
 
-## Table of Contents
+## Table of contents
 
-- [Quickstart](#quickstart)
-- [Why This Template?](#why-this-template)
 - [Features](#features)
-- [Running Locally](#running-locally)
-- [Project Structure](#project-structure)
-- [Architecture Overview](#architecture-overview)
-- [Documentation](#documentation)
-- [Production Checklist](#production-checklist)
-- [Contributing](#contributing)
-
----
-
-## Quickstart
-
-### Prerequisites
-
-- Node.js ≥ 20.0.0
-- npm ≥ 9.0.0
-- PostgreSQL ≥ 14
-- Redis ≥ 6.0
-- Keycloak (for authentication)
-
-```bash
-npm install
-cp .env.example .env
-
-# Start PostgreSQL and Redis (using Docker)
-docker-compose up -d
-
-# Setup database
-npm run prisma:generate
-npm run prisma:migrate
-npm run prisma:seed  # Optional
-
-# Start development server
-npm run dev
-```
-
-Then open:
-
-- API Docs (Swagger UI): `http://localhost:9999/api-docs`
-- Health Checks: `http://localhost:9999/api/health`
-- Grafana (Monitoring): `http://localhost:3002` (admin/admin)
-- Prometheus: `http://localhost:9090`
-
-> [!NOTE]
-> Ports and routes may differ depending on your `.env` configuration.
-
----
-
-## Why This Template?
-
-This template is built for teams who want to ship **production-grade NestJS services** quickly — without reinventing foundational infrastructure.
-
-It focuses on:
-
-- **Strong defaults** (security, logging, config validation)
-- **Scalability** (Redis-backed caching + throttling)
-- **Observability** (Prometheus metrics, Loki logs, Grafana dashboards)
-- **Documentation** (15+ detailed docs covering every module)
+- [Tech stack](#tech-stack)
+- [Architecture](#architecture)
+- [Project structure](#project-structure)
+- [Getting started (development)](#getting-started-development)
+- [Environment variables](#environment-variables)
+- [Database, migrations & seeding](#database-migrations--seeding)
+- [Creating an admin](#creating-an-admin)
+- [API conventions](#api-conventions)
+- [Authentication & authorization](#authentication--authorization)
+- [Real‑time, jobs & caching](#real-time-jobs--caching)
+- [Testing](#testing)
+- [Observability](#observability)
+- [Production deployment](#production-deployment)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Features
 
-| Feature                   | Description                                          |
-|---------------------------|------------------------------------------------------|
-| 🏛️ **Hexagonal Architecture** | Ports & Adapters for clean separation of concerns |
-| 📦 **CQRS**               | Command/Query separation via NestJS CQRS module      |
-| 🔐 **Authentication**     | Keycloak SSO with JWT validation                     |
-| 🚀 **Two-Level Caching**  | In-memory LRU + Redis distributed cache              |
-| 🛡️ **Rate Limiting**     | User & IP-based with Redis backend                   |
-| 🗄️ **Database**          | PostgreSQL with Prisma ORM + soft delete             |
-| 📁 **File Uploads**       | Local + S3 storage with Sharp image processing       |
-| 🩺 **Health Checks**      | Terminus-based monitoring (DB, Redis, Throttler)     |
-| 📊 **Metrics & Logs**     | Prometheus + Grafana + Loki for full observability   |
-| 📝 **Structured Logging** | Pino with JSON output + request tracing              |
-| 📖 **API Documentation**  | OpenAPI 3.0 with Swagger UI                          |
-| 🔒 **Security**           | Helmet, CORS, validation pipes                       |
-| ⚡ **Graceful Shutdown**   | Zero-downtime friendly shutdown hooks                |
-| 🔄 **Idempotency**        | Request deduplication for POST/PATCH                 |
-| 📧 **Email**              | Transactional emails with Handlebars templates       |
+- **Gig lifecycle** — sellers create gigs (4‑step flow); admins approve/reject; editing *sensitive* fields re‑queues a gig for review (price/delivery edits apply immediately).
+- **Browse & search** — public catalog with filters (price, rating, delivery time, endorsed‑only) and sorts (newest, highest‑rated, most completed orders), backed by denormalized counters.
+- **Orders & escrow** — full order state machine (`PendingReview → InProgress → Late → Delivered → AwaitingFinalization → Completed`, plus `Cancelled`/`Frozen`) with exact‑hour deadline jobs, atomic escrow money moves, and an **80/20** platform fee on completion.
+- **Disputes** — either party can file; 48h response window; admin verdict (`RefundBuyer` / `CompleteForSeller` / `SplitFunds`) with evidence + order chat history.
+- **Wallet** — deposits (instant, simulated), escrow holds, earnings, and withdrawals with admin approval.
+- **Reviews & ratings** — buyers review completed orders; sellers reply once; per‑gig + per‑seller aggregates.
+- **Messaging** — one thread per user pair, attachments, presence, read cursors; order‑scoped system events.
+- **Notifications** — in‑app + email, event‑driven.
+- **Admin suite** — gig queue, disputes, withdrawals, user endorsement, categories, metrics dashboard, Excel reports, audit log.
 
 ---
 
-## Running Locally
+## Tech stack
 
-### Database Setup
+| Area | Choice |
+|---|---|
+| Runtime | Node.js **22** (Alpine in Docker) · package manager **pnpm 10** |
+| Framework | NestJS **10** (`@nestjs/cqrs`, `@nestjs/schedule`, `@nestjs/throttler`, `@nestjs/terminus`, `@nestjs/swagger`) |
+| Database | PostgreSQL **16** via **Prisma 7** (`prisma-client` generator → `generated/prisma`, `@prisma/adapter-pg` pooling) |
+| Auth | **Keycloak 26** (realm `campusgig`) — JWT bearer, global guards |
+| Cache / queues | **Redis 7** + **BullMQ** (scheduled order/dispute deadline jobs); 2‑layer (in‑memory LRU + Redis) cache |
+| Real‑time | **Socket.IO** gateway (`/ws` namespace) |
+| Files | `multer` + `sharp` (image processing) + S3 (`@aws-sdk/client-s3`, presigned URLs) |
+| Email | `nodemailer` + `@nestjs-modules/mailer` + Handlebars templates |
+| Reports | `exceljs` |
+| Observability | `nestjs-pino` → Loki · Prometheus metrics · Grafana dashboards |
+| Validation | `class-validator` / `class-transformer`; env via Joi |
+
+---
+
+## Architecture
+
+CampusGig follows **hexagonal architecture** (ports & adapters) with **CQRS**. Each feature is a self‑contained NestJS module split into four layers:
+
+```
+src/modules/<feature>/
+├── domain/            # Entities, value objects, repository PORTS (interfaces), domain events
+├── application/       # CQRS use-cases
+│   ├── commands/      #   write operations + handlers
+│   ├── queries/       #   read operations + handlers
+│   └── events/        #   event handlers (cache invalidation, notifications, sockets)
+├── infrastructure/    # ADAPTERS: Prisma repositories, S3 storage, external clients
+└── presentation/      # HTTP controllers + request/response DTOs + decorators
+```
+
+The **domain** layer defines repository ports (e.g. `ORDERS_REPOSITORY_PORT`); the **infrastructure** layer provides Prisma adapters bound via DI in each `*.module.ts`. Controllers stay thin — they dispatch commands/queries through `CommandBus`/`QueryBus`. Domain code imports nothing framework‑specific, so use‑cases are unit‑testable against mocked ports.
+
+**Feature modules** (`src/modules/`):
+
+| Module | Responsibility |
+|---|---|
+| `users` | Profiles, skills, portfolio, endorsements, JIT provisioning from Keycloak |
+| `categories` | Category CRUD (admin) + public list |
+| `gigs` | Seller‑side gig CRUD, images, publish lifecycle |
+| `public-gigs` | Buyer‑side browse / search / gig detail |
+| `wishlist` | Saved gigs |
+| `wallet` | Balance, transactions, deposits, withdrawals (+ admin approval) |
+| `messaging` | Threads, messages, attachments, presence (Socket.IO) |
+| `orders` | Order state machine, escrow, deliveries, extensions/cancellations, deadline jobs |
+| `reviews` | Reviews, seller replies, rating aggregates |
+| `disputes` | Filing, response, evidence, admin verdict + payout |
+| `notifications` | In‑app + email notifications |
+| `dashboard` | Buyer/seller dashboard aggregates |
+| `admin-activity` | Admin audit log |
+| `admin-metrics` | Admin dashboard metrics + charts |
+| `admin-reports` | Excel report exports |
+| `stats` | Public platform stats (landing trust strip) + gig views |
+
+Cross‑cutting concerns live under `src/shared/` (`auth`, `cache`, `email`, `keycloak`, `monitoring`, `persistence`, `storage`, `throttler`, response/transform interceptors, decorators).
+
+---
+
+## Project structure
+
+```
+campusgig-backend/
+├── src/
+│   ├── main.ts                 # bootstrap: global prefix /api, URI versioning v1, Swagger, guards
+│   ├── app.module.ts           # root module — registers all feature modules
+│   ├── config/                 # typed config (app, database, redis, keycloak, …) + Joi validation
+│   ├── modules/                # feature modules (see table above)
+│   ├── shared/                 # cross-cutting infrastructure + presentation helpers
+│   └── health/                 # /health/live readiness/liveness (Terminus)
+├── prisma/
+│   ├── schema.prisma           # datasource + prisma-client generator (multi-file)
+│   ├── models/                 # split model files (gigs, orders, users, disputes, …)
+│   ├── migrations/             # SQL migrations
+│   ├── seed.ts                 # demo data seeder (see below)
+│   └── reconcile-review-aggregates.ts  # maintenance: recompute denormalized counters
+├── scripts/admin-create.ts     # provision a Keycloak admin
+├── test/                       # e2e tests + jest setup
+├── Dockerfile                  # multi-stage: base → deps → build → dev → prod
+├── docker-compose.dev.yaml     # app + db + redis + keycloak + monitoring (hot-reload)
+├── docker-compose.prod.yaml    # hardened single-VPS stack
+└── .env.example                # all env vars (copy to .env.development / .env.production)
+```
+
+---
+
+## Getting started (development)
+
+**Prerequisites:** Docker + Docker Compose. (Node 22 + pnpm 10 only if you run the app outside Docker.)
 
 ```bash
-# Start PostgreSQL and Redis (using Docker)
-docker-compose up -d
+# 1. Configure env
+cp .env.example .env.development      # then fill in secrets (DB, Redis, Keycloak…)
 
-# Generate Prisma client
-npm run prisma:generate
+# 2. Bring up the full stack (app + Postgres + Redis + Keycloak + monitoring)
+pnpm docker:dev                       # docker compose -f docker-compose.dev.yaml up -d --build
 
-# Apply migrations
-npm run prisma:migrate
+# 3. Tail the API logs
+pnpm docker:logs                      # docker logs campusgig-app-dev -f
 
-# Seed database (optional)
-npm run prisma:seed
+# 4. Apply migrations + seed demo data (first run)
+pnpm prisma:migrate
+pnpm prisma:seed                      # SEED_FORCE=1 pnpm prisma:seed  → wipe & reseed
 ```
 
-### Running the Application
+The dev container runs `pnpm install → prisma generate → nest start --watch`, with the source bind‑mounted for hot reload (debug port `9229`).
+
+Once up (default dev ports — all env‑driven):
+
+| Service | URL |
+|---|---|
+| API | `http://localhost:8888/api/v1` |
+| Swagger / OpenAPI | `http://localhost:8888/api-docs` |
+| Health | `http://localhost:8888/api/v1/health/live` |
+| BullMQ dashboard | `http://localhost:8888/admin/queues` (basic auth) |
+| Keycloak | `http://localhost:8085` |
+| PostgreSQL | `localhost:5001` |
+| Grafana · Prometheus | `http://localhost:3001` · `:9090` |
+
+**Run the app on the host instead** (infra in Docker, app local):
 
 ```bash
-# Development (with hot reload)
-npm run dev
-
-# Production build
-npm run build
-npm run start:prod
+docker compose -f docker-compose.dev.yaml up -d db redis keycloak
+pnpm install && pnpm dev
 ```
 
-### Running Tests
+---
+
+## Environment variables
+
+Copy `.env.example` and fill in. Key groups:
+
+| Group | Vars |
+|---|---|
+| App | `NODE_ENV`, `PORT`, `API_PREFIX` (→ `/api/v1`), `APP_NAME`, `BASE_URL`, `CORS_ORIGINS`, `GRACEFUL_SHUTDOWN_TIMEOUT_MS` |
+| Database | `DATABASE_URL`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD` |
+| Redis / cache | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_TTL`, `CACHE_TTL`, `CACHE_LRU_SIZE` |
+| Keycloak | `KEYCLOAK_HOST`, `KEYCLOAK_PORT`, `KEYCLOAK_PUBLIC_URL`, `KEYCLOAK_REALM`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET`, `KEYCLOAK_ADMIN_USER`, `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_DB_NAME` |
+| Rate limiting | `THROTTLE_TTL`, `THROTTLE_LIMIT` |
+| Email | `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_SECURE`, `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_FROM_NAME`, `EMAIL_FROM_ADDRESS` |
+| Storage | `STORAGE_TYPE` (`local`\|`s3`), `UPLOAD_DEST`, `MAX_FILE_SIZE`, `ALLOWED_FILE_TYPES`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_BUCKET` |
+| Observability | `LOG_LEVEL`, `LOKI_ENABLED`, `LOKI_HOST`, `PROMETHEUS_ENABLED`, `GRAFANA_*` |
+| BullMQ dashboard | `BULL_BOARD_USER`, `BULL_BOARD_PASSWORD` |
+
+---
+
+## Database, migrations & seeding
+
+Prisma uses the **`prisma-client` generator** (output `generated/prisma`) with the split‑model layout under `prisma/models/`, and the **pg adapter** for pooling.
 
 ```bash
-# Unit tests
-npm test
+pnpm prisma:migrate          # create + apply a dev migration (dotenv -e .env.development)
+pnpm prisma:generate         # regenerate the client after a schema change
+pnpm prisma:studio           # open Prisma Studio
+pnpm prisma:seed             # seed demo data  (SEED_FORCE=1 to wipe + reseed)
+pnpm prisma:reset            # drop, re-migrate, re-seed
+```
 
-# Watch mode
-npm run test:watch
+**Seeding (`prisma/seed.ts`)** builds a realistic demo dataset: ~140 users, ~330 gigs (most rated via a large historical‑orders layer), demo orders across every state, disputes with chat + evidence + delivered files, portfolios, and wallet history. Seeded users carry a `seed-` Keycloak‑ID prefix (the only marker; cleanup keys off it). The seeder is idempotent and recomputes all denormalized aggregates at the end.
 
-# Coverage report
-npm run test:cov
+**Maintenance:** `reconcile-review-aggregates.ts` recomputes `Gig`/`User` review counts, `avgRating`, and `completedOrderCount` from source rows if they ever drift:
 
-# E2E tests
-npm run test:e2e
+```bash
+pnpm exec dotenv -e .env.development -- ts-node prisma/reconcile-review-aggregates.ts
+```
+
+**Production** runs migrations automatically on container start (`prisma migrate deploy && node dist/src/main`).
+
+---
+
+## Creating an admin
+
+`scripts/admin-create.ts` provisions a **Keycloak** user, ensures the `admin` realm role, assigns it, and prints a one‑time password. The local DB `User` row (with `isAdmin=true`) is created lazily on that admin's first authenticated request.
+
+```bash
+pnpm admin:create --email admin@campusgig.local --displayName "Admin User"
 ```
 
 ---
 
-## Project Structure
+## API conventions
 
+- **Prefix + versioning:** every route is under `/api/<version>`, default `/api/v1` (URI versioning).
+- **Response envelope:** responses are wrapped as `{ meta: { code, type, message, … }, data }` by a global transform interceptor; errors share the same shape.
+- **Wire format:** request bodies arrive `snake_case` and are converted to `camelCase` for DTOs; responses are converted back to `snake_case`. (camelCase in TS, snake_case on the wire — never bypass.)
+- **OpenAPI:** Swagger UI at `/api-docs` with bearer‑JWT auth; the CLI plugin generates schemas from `class-validator` decorators.
+- **Health:** `GET /api/v1/health/live` (Terminus — DB, Redis, cache).
+- **Idempotency:** money‑mutating endpoints honor an `Idempotency-Key` header (Redis‑backed).
+
+---
+
+## Authentication & authorization
+
+- **Keycloak** (realm `campusgig`) issues JWTs; a global `KeycloakAuthGuard` validates the bearer token on every request.
+- `@Public()` opts a route out of auth (landing, browse, gig detail, public stats).
+- `@Roles('admin')` / `@AdminOnly()` + a `RolesGuard` gate the admin endpoints.
+- New users are **JIT‑provisioned** into the DB on first authenticated call; admins get `isAdmin=true` from their realm role.
+
+---
+
+## Real‑time, jobs & caching
+
+- **Socket.IO** gateway on the `/ws` namespace (JWT handshake). Rooms: `user:${id}` + feature rooms. Powers chat, notifications, order updates, and presence (deduped across tabs via Redis). Socket payloads bypass the HTTP case‑conversion interceptors.
+- **BullMQ** schedules exact‑hour deadline jobs: accept (24h), delivery deadline, review/auto‑complete (72h), dispute window (7 days). Inspectable at `/admin/queues`.
+- **2‑layer cache:** in‑memory LRU (L1) + Redis (L2), with event‑driven invalidation (e.g. gig approval and review submit clear the browse cache).
+- **Money atomicity:** every escrow/refund/release runs inside a single Prisma `$transaction`; order money transitions take a `SELECT … FOR UPDATE` row lock to serialize concurrent buyer/job actions.
+
+---
+
+## Testing
+
+```bash
+pnpm test            # unit tests (Jest)
+pnpm test:watch
+pnpm test:cov        # coverage
+pnpm test:e2e        # e2e (test/jest-e2e.config.js)
 ```
-src/
-├── config/                          # App-wide configuration
-│   ├── database.config.ts
-│   ├── cache.config.ts
-│   ├── keycloak.config.ts
-│   └── ...                          # throttle, upload, cors, etc.
-├── modules/                         # Feature modules (Hexagonal Architecture)
-│   └── users/                       # Example: Users module
-│       ├── domain/                  # Entities, exceptions, repository ports
-│       ├── application/             # Commands, queries, events, service ports
-│       ├── infrastructure/          # Prisma repository, cache/storage adapters
-│       ├── presentation/            # HTTP controllers, DTOs, consumers, filters
-│       └── users.module.ts          # Port → Adapter wiring
-├── shared/                          # Cross-cutting shared code
-│   ├── infrastructure/              # Auth guards, cache, storage, email, Prisma
-│   ├── presentation/                # Interceptors, pipes, filters, decorators
-│   ├── domain/                      # Shared domain exceptions
-│   ├── constants/                   # Response codes, messages
-│   ├── types/                       # Shared type definitions
-│   └── utils/                       # Pagination, validation helpers
-├── health/                          # Health check endpoints
-├── app.module.ts                    # Root application module
-└── main.ts                          # Application entry point
+
+Handlers, utilities, and domain logic are unit‑tested with mocked repository ports. Run `pnpm lint` and `pnpm format:check` before committing (Husky + lint‑staged enforce this on commit).
+
+---
+
+## Observability
+
+Structured logs via `nestjs-pino` are shipped to **Loki** and viewable in **Grafana**; **Prometheus** scrapes app + node metrics. Both compose files include the full Grafana/Loki/Promtail/Prometheus/node‑exporter stack.
+
+---
+
+## Production deployment
+
+Single‑VPS deployment via `docker-compose.prod.yaml` (multi‑stage `Dockerfile`, `target: prod` — `pnpm install --prod`, compiled `dist/`, non‑root user, Prisma engines baked in):
+
+```bash
+cp .env.example .env.production      # fill in production secrets
+docker compose -f docker-compose.prod.yaml up -d --build
 ```
 
----
+- Nginx on the host terminates TLS and routes `campusgig.tech` (frontend), `api.campusgig.tech` (this API), and `auth.campusgig.tech` (Keycloak). App/DB/Redis/Keycloak bind to `127.0.0.1` only.
+- Migrations run on container start; health is probed at `/api/v1/health/live` (180s start period to wait out Keycloak's cold boot).
+- Resource limits, log rotation, and persistent volumes (DB, Redis AOF, uploads) are configured in the compose file.
 
-## Architecture Overview
+### Pre‑deploy checklist
 
-This project uses **Hexagonal Architecture (Ports & Adapters)** with **CQRS**. Business logic is isolated from infrastructure through port interfaces, with adapters plugged in via dependency injection.
-
-See [Hexagonal Architecture Guide](docs/hexagonal-architecture.md) and [CQRS Guide](docs/cqrs-guide.md) for full details.
-
-### Why This Architecture?
-
-- **Swappable infrastructure** — Change databases, caches, or storage by replacing one adapter
-- **Testability** — Mock port interfaces without spinning up real services
-- **Clear boundaries** — Domain logic has zero imports from NestJS, Prisma, or any framework
-- **CQRS** — Separate read/write paths for scalable, maintainable use cases
-
-### Where to Look
-
-| If you want to...              | Look in...                                      |
-|-------------------------------|--------------------------------------------------|
-| Change database connection    | `src/config/database.config.ts`                  |
-| Modify cache behavior         | `src/config/cache.config.ts`                     |
-| Adjust rate limits            | `src/config/throttle.config.ts`                  |
-| Configure authentication      | `src/shared/infrastructure/auth/`                |
-| Add file upload options       | `src/shared/infrastructure/storage/`             |
-| Add health checks             | `src/health/health.controller.ts`                |
-| Add a new feature module      | Create in `src/modules/` with hexagonal layers   |
-| Understand the architecture   | `docs/hexagonal-architecture.md`                 |
+- [ ] Strong secrets set (`KEYCLOAK_CLIENT_SECRET`, DB/Redis passwords, BullMQ dashboard creds).
+- [ ] `DATABASE_URL` + `REDIS_*` + `KEYCLOAK_*` point at production.
+- [ ] `CORS_ORIGINS` lists only the production frontend origin(s).
+- [ ] TLS + reverse proxy (Nginx) in front; app not exposed publicly.
+- [ ] Backups configured for the Postgres volume.
+- [ ] Health checks wired into your process manager / orchestrator.
 
 ---
 
-## Documentation
+## Troubleshooting
 
-Comprehensive documentation is available in the `docs/` folder:
-
-| Document | Description |
-|----------|-------------|
-| [Hexagonal Architecture](docs/hexagonal-architecture.md) | Ports & Adapters architecture guide |
-| [CQRS Guide](docs/cqrs-guide.md) | Command/Query separation patterns |
-| [Auth Module](docs/auth-module.md) | Keycloak integration & JWT handling |
-| [Cache](docs/cache.md) | Two-layer caching architecture |
-| [Rate Limiting](docs/rate-limit.md) | Distributed throttling |
-| [Monitoring](docs/monitoring.md) | Prometheus metrics & Grafana dashboards |
-| [Logging](docs/logging.md) | Loki log aggregation & querying |
-| [Graceful Shutdown](docs/graceful-shutdown.md) | Zero-downtime deployments |
-| [Type Safety](docs/type-safety.md) | Type-safe selects and DTOs |
-| [Testing](docs/testing.md) | Unit, integration, E2E testing |
-| [Upload Module](docs/upload-module.md) | File storage & image processing |
-| [Idempotency](docs/idempotency.md) | Request deduplication |
-| [BullMQ Guide](docs/BULLMQ-GUIDE.md) | Background job processing |
-
----
-
-## Production Checklist
-
-Before deploying to production:
-
-- [ ] Set strong secrets (`JWT_SECRET`, `KEYCLOAK_CLIENT_SECRET`)
-- [ ] Configure `DATABASE_URL` and `REDIS_*` for production
-- [ ] Verify CORS settings for allowed origins
-- [ ] Configure Helmet security headers for your environment
-- [ ] Set up trusted proxies if behind load balancers
-- [ ] Wire health checks into orchestration (K8s, ECS, etc.)
-- [ ] Configure log shipping (Datadog, ELK, Loki)
-- [ ] Tune Redis TTLs and memory limits
-- [ ] Confirm graceful shutdown timeout matches orchestrator
-
----
-
-## Contributing
-
-PRs and issues are welcome.
-
-Guidelines:
-
-- Keep infrastructure modules isolated and configurable
-- Add health indicators when introducing new dependencies
-- Include tests for new behavior
-- Ensure linting and tests pass before submitting
+- **Keycloak admin locked out / deleted** — restart the Keycloak container so it re‑bootstraps the admin from `KEYCLOAK_ADMIN_*`, or run `kc.sh bootstrap-admin user --username:env KEYCLOAK_ADMIN --password:env KEYCLOAK_ADMIN_PASSWORD` inside it.
+- **Stale Prisma client (missing new columns)** — `pnpm prisma:generate` (the dev container regenerates on restart; the host client is separate).
+- **Watcher didn't pick up a new module/file (Docker on Windows)** — restart the app container.
+- **Badge counts vs. live counts disagree** — run the reconcile script.
 
 ---
 
